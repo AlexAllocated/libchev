@@ -9,7 +9,7 @@ libchev provides bounded structured logs, capped counters, diagnostic reports an
 From a libchev checkout:
 
 ```sh
-python3 scripts/vendor.py /path/to/YourAddon --ref v1.1.0
+python3 scripts/vendor.py /path/to/YourAddon --ref v1.1.1
 python3 scripts/vendor.py /path/to/YourAddon --check
 ```
 
@@ -35,7 +35,7 @@ local log = LibChev.NewLog()
 LibChev.AppendLog(log, "Addon initialized", "CORE")
 ```
 
-The core exports `VERSION = "1.1.0"` and `API_VERSION = 1`. Optional modules extend only that same private object. Never load the library via a separate addon or publish the object in a global registry. Different embedded versions may coexist in either addon load order.
+The core exports `VERSION = "1.1.1"` and `API_VERSION = 1`. Optional modules extend only that same private object. Never load the library via a separate addon or publish the object in a global registry. Different embedded versions may coexist in either addon load order.
 
 ## One debug interface across addons
 

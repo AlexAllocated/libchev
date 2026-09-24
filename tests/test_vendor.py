@@ -26,7 +26,7 @@ class VendorTests(unittest.TestCase):
             ("legacy4", set(vendor.LEGACY_FILES), "0.2.0"),
             ("historical", set(vendor.FILES_V1_0), "1.0.0"),
             ("first", set(vendor.FILES), "1.1.0"),
-            ("second", set(vendor.FILES), "1.1.0"),
+            ("second", set(vendor.FILES), "1.1.1"),
             ("incomplete", set(vendor.FILES_V1_0), "1.1.0"),
             ("wrong_historical", set(vendor.FILES), "1.0.0"),
             ("unknown", set(vendor.FILES), "99.0.0"),
@@ -96,7 +96,7 @@ class VendorTests(unittest.TestCase):
             vendor.vendor(self.addon, "missing-ref", check_only=True)
         self.assertEqual(before, self.snapshot())
         self.install("second")
-        self.assertEqual(self.manifest()["version"], "1.1.0")
+        self.assertEqual(self.manifest()["version"], "1.1.1")
         self.assertEqual(self.manifest()["revision"], self.revisions["second"])
 
     def test_edited_file_is_preserved(self):

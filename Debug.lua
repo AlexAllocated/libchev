@@ -429,7 +429,6 @@ function Controller:RunTests(reverse, present)
 	local report = self:Header()
 	report:Add("suite", Text(self.policy.addonName, "Addon") .. " in-game tests")
 	report:Add("purpose", "Addon-owned isolated checks; live-client behavior requires separate validation.")
-	report:Add("summary", L.TestSummary(result))
 	for index, failure in ipairs(result.failures) do
 		report:Add("failure." .. index, "[FAIL] " .. Text(failure.name))
 		if self.policy.failureDetails == true then
@@ -450,7 +449,7 @@ function Controller:RunTests(reverse, present)
 			self:ShowLog()
 		end)
 		if not presented then
-			self:Fallback(report:Text())
+			self:Fallback(report:Text() .. "\n" .. L.TestSummary(result))
 		end
 	else
 		for _, failure in ipairs(result.failures) do

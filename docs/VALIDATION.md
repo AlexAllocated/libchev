@@ -14,3 +14,9 @@ Automated coverage includes independent namespace copies, global-write traps for
 These checks are offline evidence. They do not prove Retail or Classic/Forever behavior. Live validation must separately exercise all three addons together, both load orders where practical, each diagnostics/copy command, test command, loading/reload/enable transitions, combat and restriction transitions, protected/forbidden nameplates, and each addon's unique behavior. Preserve saved variables. Record client build, addon revision, test counts, and observed errors/taint; do not infer support for unknown Forever mechanics.
 
 An addon integration branch or pull request is not an addon release. Consumer version tags and deployment require their own authorization and validation.
+
+## 1.1.1 console correction
+
+User-reported Forever 1.60.1 build 70009/interface 16001 results for consumers of 1.1.0: QuestTogether 324/324 passed; PvPTogether 15/15 passed; NoPoizen 122/123 passed, with `CoreTests.lua:138` raising division by zero while constructing a NaN test fixture. Consumer fixes remove undefined arithmetic from client-loaded fixtures while retaining NaN rejection coverage offline. PvPTogether supplies the optional clock adapter for shared timestamp formatting.
+
+The 1.1.1 window uses the same native texture templates and artwork referenced by the installed Retail and Forever FrameXML. All regions remain unnamed and independently guarded. Offline region simulations check every created region against denied ownership and restriction changes; they do not establish live appearance or taint safety. The new styling and corrected consumer suites still require a live rerun. Shared test presentation has one final summary, with bounded-history and fallback coverage.

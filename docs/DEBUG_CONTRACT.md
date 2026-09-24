@@ -27,3 +27,5 @@ Methods:
 Window/controller fields used by the shared view are owned: `window`, `mode` (log/report), `reportText`, `reportTitle`, `title`, `tailPinned`, `forceTail`. UI implementation is exclusively DebugWindow.lua: same controls, layout, category/search/tail/copy/test/diagnostic behavior for every consumer. Keep test-runner and fixtures headless by default. Consumer methods may be thin compatibility forwards; delete duplicate generic mechanics/UI.
 
 `LibChev.FormatSafe(format,...)` and `LibChev.StateText(label,value)` expose the same safe primitive formatting for compatibility adapters; no foreign object coercion. Internal batches restore their previous depth after a failed policy callback. Presentation failures retain a chat test-summary fallback and never leave the runner locked.
+
+The console uses native WoW texture-only templates for its panel borders and buttons, plus tiled marble/rock artwork. Frames, textures, scripts and state remain privately owned; it does not inherit frame scripts, use shared UI pools, or register global frame names. Presented test runs end with one summary, including when bounded history evicts earlier details.
