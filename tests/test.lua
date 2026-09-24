@@ -407,17 +407,20 @@ end)
 Test("runner supports reverse order and private isolation adapter", function()
 	local order = {}
 	local result = T.RunTests(
-		{ {
-			name = "one",
-			run = function()
-				order[#order + 1] = 1
-			end,
-		}, {
-			name = "two",
-			run = function()
-				order[#order + 1] = 2
-			end,
-		} },
+		{
+			{
+				name = "one",
+				run = function()
+					order[#order + 1] = 1
+				end,
+			},
+			{
+				name = "two",
+				run = function()
+					order[#order + 1] = 2
+				end,
+			},
+		},
 		{
 			reverse = true,
 			run = function(fn)
