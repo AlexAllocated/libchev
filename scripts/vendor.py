@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess
 
 SOURCE = Path(__file__).resolve().parents[1]
-FILES = ("LibTogether.lua", "ReportWindow.lua", "LICENSE")
+FILES = ("LibTogether.lua", "ReportWindow.lua", "SelfTests.lua", "LICENSE")
 REPOSITORY = "https://github.com/AlexAllocated/LibTogether"
 
 
@@ -17,7 +17,7 @@ def digest(data):
 
 def check(target):
     manifest = json.loads((target / "manifest.json").read_text())
-    if manifest.get("repository") != REPOSITORY or set(manifest["files"]) != set(FILES):
+    if manifest.get("repository") != REPOSITORY or not set(manifest["files"]).issubset(FILES):
         raise ValueError(f"Unexpected LibTogether manifest in {target}")
     for name, sha in manifest["files"].items():
         path = target / name

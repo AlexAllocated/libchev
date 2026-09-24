@@ -6,6 +6,7 @@ local Together = { VERSION = "1.0.0", API_VERSION = 1 }
 local unpackValues = unpack or table.unpack
 local secret = type(issecretvalue) == "function" and issecretvalue or nil
 local accessible = type(canaccessvalue) == "function" and canaccessvalue or nil
+local accessibleTable = type(canaccesstable) == "function" and canaccesstable or nil
 local stackTrace = type(debugstack) == "function" and debugstack or nil
 
 function Together.CanAccess(value)
@@ -50,6 +51,56 @@ function Together.Number(value)
 		return nil
 	end
 	return value
+end
+
+-- Only for regions CREATED AND OWNED by the caller. This does not establish
+-- ownership or grant permission to modify arbitrary Blizzard frames.
+function Together.CanMutateOwnedRegion(region)
+	if not Together.CanAccess(region) then
+		return false
+	end
+	local kind = type(region)
+	if kind ~= "table" and kind ~= "userdata" then
+		return false
+	end
+	if kind == "table" and accessibleTable then
+		local ok, allowed = pcall(accessibleTable, region)
+		if not ok or allowed ~= true then
+			return false
+		end
+	end
+	for _, name in ipairs({ "IsForbidden", "IsProtected" }) do
+		local read, method = pcall(function()
+			return region[name]
+		end)
+		if not read or not Together.CanAccess(method) or type(method) ~= "function" then
+			return false
+		end
+		local ok, result = pcall(method, region)
+		if not ok or not Together.CanAccess(result) or result ~= false then
+			return false
+		end
+	end
+	return true
+end
+
+function Together.ReadEnvironment(api)
+	local environment = {}
+	if type(api.GetBuildInfo) == "function" then
+		local ok, version, build, _, interface = pcall(api.GetBuildInfo)
+		if ok then
+			environment.version = Together.Text(version, "unknown")
+			environment.build = Together.Text(build, "unknown")
+			environment.interface = Together.Text(interface, "unknown")
+		end
+	end
+	if type(api.GetLocale) == "function" then
+		local ok, locale = pcall(api.GetLocale)
+		if ok then
+			environment.locale = Together.Text(locale, "unknown")
+		end
+	end
+	return environment
 end
 
 local function Limit(value, default, maximum)
@@ -164,6 +215,17 @@ function Together.NewReport(maxChars)
 	return report
 end
 
+function Together.DiagnosticReport(addon, version, environment)
+	local report = Together.NewReport()
+	report:Add("addon", addon)
+	report:Add("version", version)
+	report:Add("library", "LibTogether " .. Together.VERSION)
+	for _, key in ipairs({ "version", "build", "interface", "locale" }) do
+		report:Add("client." .. key, environment[key])
+	end
+	return report
+end
+
 -- An error boundary contains failures, NOT taint. onError belongs to the caller;
 -- it is itself isolated and never installed as a global error handler.
 function Together.GuardCall(callback, onError, ...)
@@ -263,7 +325,7 @@ function Together.RunOrDeferWork(policy, workClass, key, callback, delay, reason
 	if type(callback) ~= "function" then
 		return false
 	end
-	if not policy.enabled() or policy.blocked(workClass) then
+	if (not policy.enabled() and not policy.allowImmediateWhenDisabled) or policy.blocked(workClass) then
 		Together.ScheduleWork(policy, workClass, key, callback, delay, reason)
 		return false
 	end
@@ -348,6 +410,10 @@ function Together.RunTests(cases, options)
 		end
 	end
 	return result
+end
+
+function Together.TestSummary(result)
+	return string.format("Test summary: %d passed, %d failed (%d total).", result.passed, result.failed, result.total)
 end
 
 if type(namespace) == "table" then

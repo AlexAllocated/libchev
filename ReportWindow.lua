@@ -6,12 +6,26 @@ local Together = assert(namespace.Together, "Load LibTogether.lua first")
 -- until explicitly opened, and stores references only on frames it creates.
 -- policy: restricted(), canMutate(frame), createFrame(...), parent, title.
 function Together.OpenReportWindow(owner, text, policy)
-	if policy.restricted() or not Together.CanAccess(text) or type(text) ~= "string" then
+	local ok, restricted = pcall(policy.restricted)
+	if
+		not ok
+		or not Together.CanAccess(restricted)
+		or restricted ~= false
+		or not Together.CanAccess(text)
+		or type(text) ~= "string"
+	then
 		return false
+	end
+	local function CanMutate(region)
+		local success, allowed = pcall(policy.canMutate, region)
+		return success and Together.CanAccess(allowed) and allowed == true
 	end
 	local frame = owner.diagnosticsWindow
 	if not frame then
 		frame = policy.createFrame("Frame", nil, policy.parent)
+		if not CanMutate(frame) then
+			return false
+		end
 		frame:SetSize(660, 460)
 		frame:SetPoint("CENTER")
 		frame:SetFrameStrata("DIALOG")
@@ -44,7 +58,7 @@ function Together.OpenReportWindow(owner, text, policy)
 		measure:Hide()
 		frame.TextBox, frame.Scroll, frame.Measure = box, scroll, measure
 		scroll:SetScript("OnMouseWheel", function(_, delta)
-			if not policy.canMutate(scroll) then
+			if not CanMutate(scroll) then
 				return
 			end
 			local amount = Together.Number(delta)
@@ -55,24 +69,24 @@ function Together.OpenReportWindow(owner, text, policy)
 			end
 		end)
 		box:SetScript("OnTextChanged", function(self, userInput)
-			if Together.CanAccess(userInput) and userInput and policy.canMutate(self) then
+			if Together.CanAccess(userInput) and userInput and CanMutate(self) then
 				self:SetText(frame.reportText or "")
 				self:HighlightText()
 			end
 		end)
 		box:SetScript("OnEditFocusGained", function(self)
-			if policy.canMutate(self) then
+			if CanMutate(self) then
 				self:HighlightText()
 			end
 		end)
 		local function Close()
-			if policy.canMutate(frame) then
+			if CanMutate(frame) then
 				frame:Hide()
 			end
 		end
 		box:SetScript("OnEscapePressed", Close)
 		frame:SetScript("OnHide", function()
-			if policy.canMutate(box) then
+			if CanMutate(box) then
 				box:ClearFocus()
 			end
 		end)
@@ -86,7 +100,7 @@ function Together.OpenReportWindow(owner, text, policy)
 		selectAll:SetPoint("BOTTOMLEFT", 20, 16)
 		selectAll:SetText("Select Report")
 		selectAll:SetScript("OnClick", function()
-			if policy.canMutate(box) then
+			if CanMutate(box) then
 				box:SetFocus()
 				box:HighlightText()
 			end
@@ -94,10 +108,10 @@ function Together.OpenReportWindow(owner, text, policy)
 		owner.diagnosticsWindow = frame
 	end
 	if
-		not policy.canMutate(frame)
-		or not policy.canMutate(frame.TextBox)
-		or not policy.canMutate(frame.Scroll)
-		or not policy.canMutate(frame.Measure)
+		not CanMutate(frame)
+		or not CanMutate(frame.TextBox)
+		or not CanMutate(frame.Scroll)
+		or not CanMutate(frame.Measure)
 	then
 		return false
 	end
