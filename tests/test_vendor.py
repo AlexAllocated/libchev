@@ -24,8 +24,12 @@ class VendorTests(unittest.TestCase):
         for label, names, version in (
             ("legacy3", set(vendor.LEGACY_FILES) - {"SelfTests.lua"}, "0.1.0"),
             ("legacy4", set(vendor.LEGACY_FILES), "0.2.0"),
-            ("first", set(vendor.FILES), "1.0.0"),
+            ("historical", set(vendor.FILES_V1_0), "1.0.0"),
+            ("first", set(vendor.FILES), "1.1.0"),
             ("second", set(vendor.FILES), "1.1.0"),
+            ("incomplete", set(vendor.FILES_V1_0), "1.1.0"),
+            ("wrong_historical", set(vendor.FILES), "1.0.0"),
+            ("unknown", set(vendor.FILES), "99.0.0"),
         ):
             for path in cls.source.iterdir():
                 if path.is_file():
@@ -101,6 +105,55 @@ class VendorTests(unittest.TestCase):
         before = self.snapshot()
         with self.assertRaises(ValueError):
             self.install("second")
+        self.assertEqual(before, self.snapshot())
+
+    def test_historical_four_file_install_checks_offline_and_upgrades(self):
+        self.install("historical")
+        self.assertEqual(set(self.manifest()["files"]), set(vendor.FILES_V1_0))
+        before = self.snapshot()
+        with patch.object(vendor.subprocess, "check_output", side_effect=AssertionError("check must not invoke Git")):
+            vendor.vendor(self.addon, "missing-ref", check_only=True)
+        self.assertEqual(before, self.snapshot())
+        self.install()
+        self.assertEqual(set(self.manifest()["files"]), set(vendor.FILES))
+        self.assertEqual(self.manifest()["version"], "1.1.0")
+        self.assertEqual(vendor.check(self.target), self.manifest())
+
+    def test_historical_upgrade_rejects_rehashed_edits(self):
+        self.install("historical")
+        path = self.target / "ReportWindow.lua"
+        path.write_text("preserve historical local edits")
+        manifest = self.manifest()
+        manifest["files"][path.name] = vendor.digest(path.read_bytes())
+        self.write_manifest(manifest)
+        before = self.snapshot()
+        with self.assertRaises(ValueError):
+            self.install()
+        self.assertEqual(before, self.snapshot())
+
+    def test_version_requires_its_exact_supported_source_layout(self):
+        for label in ("incomplete", "wrong_historical", "unknown"):
+            with self.subTest(label=label):
+                with self.assertRaises(ValueError):
+                    self.install(label)
+                self.assertFalse(self.target.exists())
+
+    def test_offline_check_requires_debug_files_for_v1_1(self):
+        self.install()
+        manifest = self.manifest()
+        for name in ("Debug.lua", "DebugWindow.lua"):
+            (self.target / name).unlink()
+            del manifest["files"][name]
+        self.write_manifest(manifest)
+        with patch.object(vendor.subprocess, "check_output", side_effect=AssertionError("check must not invoke Git")):
+            with self.assertRaises(ValueError):
+                vendor.check(self.target)
+
+    def test_file_removing_downgrade_is_refused_before_writes(self):
+        self.install()
+        before = self.snapshot()
+        with self.assertRaises(ValueError):
+            self.install("historical")
         self.assertEqual(before, self.snapshot())
 
     def test_rehashed_edits_are_preserved_during_upgrade(self):

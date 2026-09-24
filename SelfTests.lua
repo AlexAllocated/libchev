@@ -80,5 +80,33 @@ function T.SelfTests()
 	Test("category normalization", function()
 		Equal(T.Category(" some category! "), "SOME_CATEGORY")
 	end)
+	if T.NewDebugController then
+		Test("shared debug filters use fuzzy terms and quoted phrases", function()
+			assert(T.DebugSearchMatches("Alpha three", "ath"))
+			assert(T.DebugSearchMatches("Alpha three", '"alpha th"'))
+			assert(not T.DebugSearchMatches("Alpha three", '"alpha two"'))
+		end)
+		Test("debug controllers keep independent logs and filters", function()
+			local first, second = T.NewDebugController(), T.NewDebugController()
+			first:Append("owned event", "TEST")
+			first:SetCategory("TEST")
+			Equal(first:GetCategory(), "TEST")
+			Equal(second:GetCategory(), "ALL")
+			Equal(#second:GetEntries(), 0)
+		end)
+		Test("headless debug runner leaves history and windows untouched", function()
+			local debug = T.NewDebugController({
+				getTests = function()
+					return { { name = "private fixture", run = function() end } }
+				end,
+			})
+			local ok, passed, failed = debug:RunTests()
+			Equal(ok, true)
+			Equal(passed, 1)
+			Equal(failed, 0)
+			Equal(debug.window, nil)
+			Equal(#debug:GetEntries(), 0)
+		end)
+	end
 	return cases
 end

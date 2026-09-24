@@ -6,7 +6,7 @@ local function Load(overrides, namespace)
 		setmetatable(env, { __index = _G })
 	end
 	namespace = namespace or {}
-	for _, file in ipairs({ "libchev.lua", "ReportWindow.lua", "SelfTests.lua" }) do
+	for _, file in ipairs({ "libchev.lua", "Debug.lua", "DebugWindow.lua", "ReportWindow.lua", "SelfTests.lua" }) do
 		local chunk
 		if setfenv then
 			chunk = assert(loadfile(root .. "/" .. file))
@@ -58,7 +58,7 @@ Test("private copies in either load order cannot replace each other", function()
 		Equal(second.LibChev, b)
 		assert(a ~= b)
 		a.VERSION, a.AppendLog = "older-fixture", nil
-		Equal(b.VERSION, "1.0.0")
+		Equal(b.VERSION, "1.1.0")
 		Equal(type(b.AppendLog), "function")
 	end
 end)
@@ -506,10 +506,12 @@ Test("environment and diagnostic header sanitize client primitives", function()
 	Equal(env.build, "unknown")
 	Equal(env.locale, nil)
 	local text = T.DiagnosticReport("Fixture", "2", env):Text()
-	assert(text:find("library=libchev 1.0.0", 1, true))
+	assert(text:find("library=libchev 1.1.0", 1, true))
 	assert(text:find("client.locale=unknown", 1, true))
 end)
 assert(loadfile(root .. "/tests/test_window.lua"))(Test, Equal, Load)
+assert(loadfile(root .. "/tests/test_debug.lua"))(Test, Equal, Load)
+assert(loadfile(root .. "/tests/test_debug_window.lua"))(Test, Equal, Load)
 for _, case in ipairs(T.SelfTests()) do
 	Test(case.name, case.run)
 end

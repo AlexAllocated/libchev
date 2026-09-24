@@ -10,7 +10,9 @@ import subprocess
 import tempfile
 
 SOURCE = Path(__file__).resolve().parents[1]
-FILES = ("libchev.lua", "ReportWindow.lua", "SelfTests.lua", "LICENSE")
+FILES_V1_0 = ("libchev.lua", "ReportWindow.lua", "SelfTests.lua", "LICENSE")
+FILES = ("libchev.lua", "Debug.lua", "DebugWindow.lua", "ReportWindow.lua", "SelfTests.lua", "LICENSE")
+VERSION_FILES = {"1.0.0": FILES_V1_0, "1.1.0": FILES}
 REPOSITORY = "https://github.com/AlexAllocated/libchev"
 LEGACY_FILES = ("LibTogether.lua", "ReportWindow.lua", "SelfTests.lua", "LICENSE")
 LEGACY_REPOSITORY = "https://github.com/AlexAllocated/LibTogether"
@@ -51,6 +53,13 @@ def payload_version(data):
     return version
 
 
+def version_files(version):
+    try:
+        return VERSION_FILES[version]
+    except KeyError:
+        raise ValueError(f"Unsupported libchev version: {version}") from None
+
+
 def check(target, *, legacy=False):
     """Validate local bytes only; this deliberately never invokes Git/network."""
     target = safe_path(target)
@@ -60,16 +69,19 @@ def check(target, *, legacy=False):
     manifest = json.loads(manifest_path.read_text(), object_pairs_hook=unique_object)
     fields = {"schema", "repository", "revision", "version", "files"}
     repository = LEGACY_REPOSITORY if legacy else REPOSITORY
-    allowed = [set(LEGACY_FILES), set(LEGACY_FILES) - {"SelfTests.lua"}] if legacy else [set(FILES)]
     if (not isinstance(manifest, dict) or set(manifest) != fields
             or type(manifest["schema"]) is not int or manifest["schema"] != 1
             or manifest["repository"] != repository
             or not isinstance(manifest["revision"], str) or not REVISION.fullmatch(manifest["revision"])
             or not isinstance(manifest["version"], str) or not VERSION.fullmatch(manifest["version"])
-            or not isinstance(manifest["files"], dict) or set(manifest["files"]) not in allowed
+            or not isinstance(manifest["files"], dict)
             or any(not isinstance(value, str) or not HASH.fullmatch(value)
                    for value in manifest["files"].values())):
         raise ValueError(f"Invalid or incomplete vendor manifest: {target}")
+    allowed = ([set(LEGACY_FILES), set(LEGACY_FILES) - {"SelfTests.lua"}] if legacy
+               else [set(version_files(manifest["version"]))])
+    if set(manifest["files"]) not in allowed:
+        raise ValueError(f"Invalid or incomplete vendor file set: {target}")
     expected = set(manifest["files"]) | {"manifest.json"}
     if {path.name for path in target.iterdir()} != expected:
         raise ValueError(f"Unexpected or missing vendor files: {target}")
@@ -105,12 +117,20 @@ def source_payloads(revision, *, legacy=False):
             if kind != b"blob" or mode not in (b"100644", b"100755"):
                 raise ValueError(f"Source is not a regular tracked file: {name!r}")
             tracked[name.decode("ascii")] = True
-    expected = set(names)
-    if legacy and "SelfTests.lua" not in tracked:
-        expected.remove("SelfTests.lua")
+    main_file = "LibTogether.lua" if legacy else "libchev.lua"
+    if main_file not in tracked:
+        raise ValueError(f"Missing library source at {revision}")
+    main_payload = git("show", f"{revision}:{main_file}")
+    if legacy:
+        expected = set(names)
+        if "SelfTests.lua" not in tracked:
+            expected.remove("SelfTests.lua")
+    else:
+        expected = set(version_files(payload_version(main_payload)))
     if set(tracked) != expected:
         raise ValueError(f"Incomplete library source at {revision}")
-    return {name: git("show", f"{revision}:{name}") for name in names if name in expected}
+    return {name: main_payload if name == main_file else git("show", f"{revision}:{name}")
+            for name in names if name in expected}
 
 
 def verify_source(target, *, legacy=False):
@@ -163,11 +183,14 @@ def vendor(addon, ref, check_only=False, migrate_legacy=False):
         manifest = check(target)
         print(f"{addon.name}: libchev {manifest['version']} @ {manifest['revision'][:12]} verified")
         return
+    installed_manifest = None
     if target.exists():
         # A rehashed manifest must not disguise edits during an upgrade either.
-        verify_source(target)
+        installed_manifest = verify_source(target)
     revision = resolve_revision(ref)
     payloads = source_payloads(revision)
+    if installed_manifest is not None and not set(installed_manifest["files"]).issubset(payloads):
+        raise ValueError("Refusing a downgrade that would remove installed vendor files")
     version = payload_version(payloads["libchev.lua"])
     manifest = {"schema": 1, "repository": REPOSITORY, "revision": revision, "version": version,
                 "files": {name: digest(data) for name, data in payloads.items()}}

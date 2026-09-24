@@ -1,6 +1,6 @@
 # API version 1
 
-Load `libchev.lua` first, then optional `ReportWindow.lua` and `SelfTests.lua`, with the same addon loader namespace. Capture `namespace.LibChev` locally. All arguments described as owned below must be private addon values; passing a foreign table is outside the contract.
+Load `libchev.lua` first, then `Debug.lua` and `DebugWindow.lua` for the common console, then optional `ReportWindow.lua` and `SelfTests.lua`, with the same addon loader namespace. Capture `namespace.LibChev` locally. All arguments described as owned below must be private addon values; passing a foreign table is outside the contract.
 
 ## Primitives, logs, and reports
 
@@ -52,3 +52,7 @@ A restriction answer must be exactly false, and mutation permission exactly true
 `RunTests(cases, options)` accepts an owned array of `{name, run}` records (`fn` is also accepted). It snapshots registration, runs optional `setup(case)` and `run(callback, fixture)`, and always attempts `teardown(fixture, case)`, including failed setup/body. Options also include `reverse` and `onFailure(failure)`. Teardown must tolerate a nil fixture. Results contain `total`, `passed`, `failed`, and detached `failures`. `AssertEqual` and `TestSummary` standardize assertions and reporting.
 
 `SelfTests()` returns fresh private cases. Consumers can register them alongside safe addon checks. Engine mocks, global replacement, live addon state resets, and offline library tests are forbidden in in-game loaders.
+
+## Shared debug console
+
+Version 1.1.0 adds `NewDebugController` and one guarded console view used by all three consumers. See [the complete controller contract](DEBUG_CONTRACT.md). The older `OpenReportWindow` remains available for standalone bounded copy windows; it is no longer the addon debug console. Shared tests include three extra controller checks when `Debug.lua` is loaded (13 pure checks total).

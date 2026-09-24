@@ -9,7 +9,7 @@ Before publishing a version:
 5. Run each consumer's normal/reverse tests, TOC checks, and appropriate offline smoke profiles.
 6. Publish a new immutable annotated tag. Never move an existing tag.
 
-Initial 1.0.0 automated coverage includes independent namespace copies, global-write traps for all runtime modules, finite primitive sanitization, history/counter/report bounds, generation fences, callback holes/errors/cleanup, queue replacement/reset/disabled behavior, numeric key precision, guarded report-window construction and callbacks, and all detached shared self-tests.
+Automated coverage includes independent namespace copies, global-write traps for all runtime modules, finite primitive sanitization, history/counter/report bounds, generation fences, callback holes/errors/cleanup, queue replacement/reset/disabled behavior, numeric key precision, guarded report-window construction and callbacks, and all detached shared self-tests. Version 1.1.0 also covers shared filtering/search, dynamic owned stores, batching, headless versus presented tests, failure privacy, bounded newest-history exports, shared commands, console controls, popup paging, scrolling/tail state, and restriction changes across callbacks.
 
 These checks are offline evidence. They do not prove Retail or Classic/Forever behavior. Live validation must separately exercise all three addons together, both load orders where practical, each diagnostics/copy command, test command, loading/reload/enable transitions, combat and restriction transitions, protected/forbidden nameplates, and each addon's unique behavior. Preserve saved variables. Record client build, addon revision, test counts, and observed errors/taint; do not infer support for unknown Forever mechanics.
 
