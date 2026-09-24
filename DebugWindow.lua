@@ -85,11 +85,35 @@ local function Create(controller)
 		Call(controller, texture, "SetColorTexture", shade, shade, shade, 0.98)
 		return texture
 	end
+	local function NativeTexture(parent, template, layer)
+		-- Texture-only templates supply Blizzard's artwork, never frame scripts,
+		-- shared pools or globally named children. The new region remains ours.
+		local texture = Call(controller, parent, "CreateTexture", nil, layer or "BORDER", template)
+		if not Guard(controller, texture) then
+			error("debug window texture denied", 0)
+		end
+		return texture
+	end
+	local function TiledBackground(parent, file)
+		local texture = NativeTexture(parent, nil, "BACKGROUND")
+		Call(controller, texture, "SetAllPoints")
+		Call(controller, texture, "SetTexture", file, "REPEAT", "REPEAT")
+		Call(controller, texture, "SetHorizTile", true)
+		Call(controller, texture, "SetVertTile", true)
+		return texture
+	end
+	local function ButtonArt(button, setter, template)
+		local texture = NativeTexture(button, template, "ARTWORK")
+		Call(controller, texture, "SetAllPoints")
+		Call(controller, button, setter, texture)
+	end
 	local function Button(parent, label, width)
 		local button = New("Button", parent)
 		Call(controller, button, "SetSize", width or 90, 24)
-		Background(button, 0.18)
-		local text = Label(button)
+		ButtonArt(button, "SetNormalTexture", "DialogButtonNormalTexture")
+		ButtonArt(button, "SetPushedTexture", "DialogButtonPushedTexture")
+		ButtonArt(button, "SetHighlightTexture", "DialogButtonHighlightTexture")
+		local text = Label(button, "GameFontNormalSmall")
 		Call(controller, text, "SetPoint", "CENTER")
 		Call(controller, text, "SetText", label)
 		button.Label = text
@@ -109,11 +133,32 @@ local function Create(controller)
 	elseif type(frame.SetMinResize) == "function" then
 		Call(controller, frame, "SetMinResize", 740, 420)
 	end
-	Background(frame, 0.055)
+	TiledBackground(frame, "Interface\\FrameGeneral\\UI-Background-Marble")
+	local topLeft = NativeTexture(frame, "UI-Frame-TopLeftCorner", "OVERLAY")
+	Call(controller, topLeft, "SetPoint", "TOPLEFT", -6, 1)
+	local topRight = NativeTexture(frame, "UI-Frame-TopCornerRight", "OVERLAY")
+	Call(controller, topRight, "SetPoint", "TOPRIGHT", 0, 1)
+	local bottomLeft = NativeTexture(frame, "UI-Frame-BotCornerLeft")
+	Call(controller, bottomLeft, "SetPoint", "BOTTOMLEFT", -6, -5)
+	local bottomRight = NativeTexture(frame, "UI-Frame-BotCornerRight")
+	Call(controller, bottomRight, "SetPoint", "BOTTOMRIGHT", 0, -5)
+	for _, edge in ipairs({
+		{ "_UI-Frame-TitleTile", "TOPLEFT", topLeft, "TOPRIGHT", "TOPRIGHT", topRight, "TOPLEFT" },
+		{ "_UI-Frame-Bot", "BOTTOMLEFT", bottomLeft, "BOTTOMRIGHT", "BOTTOMRIGHT", bottomRight, "BOTTOMLEFT" },
+		{ "!UI-Frame-LeftTile", "TOPLEFT", topLeft, "BOTTOMLEFT", "BOTTOMLEFT", bottomLeft, "TOPLEFT" },
+		{ "!UI-Frame-RightTile", "TOPRIGHT", topRight, "BOTTOMRIGHT", "BOTTOMRIGHT", bottomRight, "TOPRIGHT" },
+	}) do
+		local texture = NativeTexture(frame, edge[1])
+		Call(controller, texture, "SetPoint", edge[2], edge[3], edge[4])
+		Call(controller, texture, "SetPoint", edge[5], edge[6], edge[7])
+	end
+	local titleBackground = NativeTexture(frame, "_UI-Frame-TitleTileBg", "BACKGROUND")
+	Call(controller, titleBackground, "SetPoint", "TOPLEFT", 2, -1)
+	Call(controller, titleBackground, "SetPoint", "TOPRIGHT", -25, -1)
 	state.frame = frame
-	state.title = Label(frame, "GameFontNormalLarge")
-	Call(controller, state.title, "SetPoint", "TOPLEFT", 16, -15)
-	Call(controller, state.title, "SetPoint", "TOPRIGHT", frame, "TOPRIGHT", -78, -15)
+	state.title = Label(frame, "GameFontNormal")
+	Call(controller, state.title, "SetPoint", "TOPLEFT", 16, -5)
+	Call(controller, state.title, "SetPoint", "TOPRIGHT", frame, "TOPRIGHT", -38, -5)
 	Call(controller, state.title, "SetJustifyH", "LEFT")
 	local drag = New("Frame", frame)
 	Call(controller, drag, "SetPoint", "TOPLEFT", 0, 0)
@@ -121,8 +166,22 @@ local function Create(controller)
 	Call(controller, drag, "SetHeight", 34)
 	Call(controller, drag, "EnableMouse", true)
 	Call(controller, drag, "RegisterForDrag", "LeftButton")
-	local close = Button(frame, "Close", 58)
-	Call(controller, close, "SetPoint", "TOPRIGHT", -12, -10)
+	local close = New("Button", frame)
+	Call(controller, close, "SetSize", 32, 32)
+	Call(controller, close, "SetPoint", "TOPRIGHT", 2, 1)
+	for _, art in ipairs({
+		{ "SetNormalTexture", "Up" },
+		{ "SetPushedTexture", "Down" },
+		{ "SetHighlightTexture", "Highlight" },
+	}) do
+		local texture = NativeTexture(close, nil, "ARTWORK")
+		Call(controller, texture, "SetAllPoints")
+		Call(controller, texture, "SetTexture", "Interface\\Buttons\\UI-Panel-MinimizeButton-" .. art[2])
+		if art[2] == "Highlight" then
+			Call(controller, texture, "SetBlendMode", "ADD")
+		end
+		Call(controller, close, art[1], texture)
+	end
 
 	state.buttons = {}
 	local previous
@@ -168,7 +227,7 @@ local function Create(controller)
 	Call(controller, state.scroll, "SetPoint", "TOPLEFT", 14, -135)
 	Call(controller, state.scroll, "SetPoint", "BOTTOMRIGHT", -38, 29)
 	Call(controller, state.scroll, "EnableMouseWheel", true)
-	Background(state.scroll, 0.09)
+	TiledBackground(state.scroll, "Interface\\FrameGeneral\\UI-Background-Rock")
 	state.box = New("EditBox", state.scroll)
 	Call(controller, state.box, "SetMultiLine", true)
 	Call(controller, state.box, "SetAutoFocus", false)
@@ -190,8 +249,8 @@ local function Create(controller)
 	Call(controller, state.slider, "EnableMouseWheel", true)
 	Background(state.slider, 0.16)
 	local thumb = Call(controller, state.slider, "CreateTexture", nil, "OVERLAY")
-	Call(controller, thumb, "SetSize", 14, 30)
-	Call(controller, thumb, "SetColorTexture", 0.65, 0.65, 0.65, 1)
+	Call(controller, thumb, "SetSize", 18, 30)
+	Call(controller, thumb, "SetTexture", "Interface\\Buttons\\UI-ScrollBar-Knob")
 	Call(controller, state.slider, "SetThumbTexture", thumb)
 	state.footer = Label(frame)
 	Call(controller, state.footer, "SetPoint", "BOTTOMLEFT", 16, 10)
@@ -204,7 +263,7 @@ local function Create(controller)
 	Call(controller, state.popup, "SetFrameStrata", "TOOLTIP")
 	Call(controller, state.popup, "EnableMouse", true)
 	Call(controller, state.popup, "EnableMouseWheel", true)
-	Background(state.popup, 0.09)
+	TiledBackground(state.popup, "Interface\\FrameGeneral\\UI-Background-Marble")
 	for index = 1, 10 do
 		local row = Button(state.popup, "", 232)
 		Call(controller, row, "SetPoint", "TOPLEFT", 4, -(index - 1) * 26 - 4)

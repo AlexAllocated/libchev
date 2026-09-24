@@ -2,7 +2,7 @@
 -- Private embedding: every addon receives its own library through its loader
 -- namespace. No global registry, Blizzard mutation, hooks, events or saved data.
 local _, namespace = ...
-local LibChev = { VERSION = "1.1.0", API_VERSION = 1 }
+local LibChev = { VERSION = "1.1.1", API_VERSION = 1 }
 local unpackValues = unpack or table.unpack
 local secret = type(issecretvalue) == "function" and issecretvalue or nil
 local accessible = type(canaccessvalue) == "function" and canaccessvalue or nil

@@ -200,13 +200,17 @@ Test("shared test commands replace TEST history show results and retain other ca
 	Equal(c:GetSearch(), "")
 	Equal(counts(), 1)
 	assert(c:GetText():find("1 passed, 0 failed", 1, true))
+	local _, summaries = c:GetText():gsub("Test summary:", "")
+	Equal(summaries, 1)
 	fail = true
 	c:HandleCommand("test")
 	assert(c:GetText():find("0 passed, 1 failed", 1, true))
+	_, summaries = c:GetText():gsub("Test summary:", "")
+	Equal(summaries, 1)
 	assert(not c:GetText():find("1 passed, 0 failed", 1, true))
 	assert(not c:GetText():find("private detail", 1, true))
 	Equal(#c:GetEntries("STATE", ""), 1)
-	assert(c:GetText():find("library=libchev 1.1.0", 1, true))
+	assert(c:GetText():find("library=libchev 1.1.1", 1, true))
 end)
 Test("shared tests preserve visible ALL view but clear its search", function()
 	local c, L = Fixture()
@@ -217,6 +221,25 @@ Test("shared tests preserve visible ALL view but clear its search", function()
 	c:RunTests(false, true)
 	Equal(c:GetCategory(), "ALL")
 	Equal(c:GetSearch(), "")
+end)
+Test("test summary survives history eviction and failed presentation exactly once", function()
+	for _, failPresentation in ipairs({ false, true }) do
+		local c, L, messages = Fixture({ limits = { maxLines = 1, maxChars = 512 } })
+		FakeWindow(L)
+		if failPresentation then
+			c.policy.setFilters = function()
+				error("cannot save filters")
+			end
+		end
+		Equal(c:RunTests(false, true), true)
+		local text = failPresentation and table.concat(messages, "\n") or c:GetText()
+		local _, summaries = text:gsub("Test summary:", "")
+		Equal(summaries, 1)
+		assert(text:find("Test summary: 0 passed, 0 failed (0 total).", 1, true))
+		if not failPresentation then
+			Equal(#c:GetLog().entries, 1)
+		end
+	end
 end)
 Test("shared runner guarantees cleanup after setup failure and contains cleanup errors", function()
 	local cleanup = false
