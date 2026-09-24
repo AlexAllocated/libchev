@@ -221,6 +221,7 @@ local function WorkKey(workClass, key)
 	local classText, keyText = Together.Text(workClass, "work"), Together.Text(key, "global")
 	return #classText .. ":" .. classText .. ":" .. type(key) .. ":" .. keyText
 end
+Together.WorkKey = WorkKey
 
 -- Policy is an owned adapter: getState, enabled, blocked, delay, defaultDelay,
 -- invoke. No library code guesses whether a Blizzard operation is safe.
