@@ -1,15 +1,22 @@
 -- OFFLINE ONLY: no TOC may load this file or its simulated client globals.
 local root = arg[1] or "."
 local function Load(overrides, namespace)
-	local env = setmetatable(overrides or {}, { __index = _G })
-	local chunk
-	if setfenv then
-		chunk = assert(loadfile(root .. "/LibTogether.lua"))
-		setfenv(chunk, env)
-	else
-		chunk = assert(loadfile(root .. "/LibTogether.lua", "t", env))
+	local env = overrides or {}
+	if not getmetatable(env) then
+		setmetatable(env, { __index = _G })
 	end
-	return chunk("Fixture", namespace or {})
+	namespace = namespace or {}
+	for _, file in ipairs({ "libchev.lua", "ReportWindow.lua", "SelfTests.lua" }) do
+		local chunk
+		if setfenv then
+			chunk = assert(loadfile(root .. "/" .. file))
+			setfenv(chunk, env)
+		else
+			chunk = assert(loadfile(root .. "/" .. file, "t", env))
+		end
+		chunk("Fixture", namespace)
+	end
+	return namespace.LibChev
 end
 local T = Load()
 local cases = {}
@@ -47,8 +54,8 @@ Test("private copies in either load order cannot replace each other", function()
 	for _ = 1, 2 do
 		local first, second = {}, {}
 		local a, b = Load(nil, first), Load(nil, second)
-		Equal(first.Together, a)
-		Equal(second.Together, b)
+		Equal(first.LibChev, a)
+		Equal(second.LibChev, b)
 		assert(a ~= b)
 		a.VERSION, a.AppendLog = "older-fixture", nil
 		Equal(b.VERSION, "1.0.0")
@@ -406,28 +413,25 @@ Test("cleanup failures fail the case without stopping later cases", function()
 end)
 Test("runner supports reverse order and private isolation adapter", function()
 	local order = {}
-	local result = T.RunTests(
+	local result = T.RunTests({
 		{
-			{
-				name = "one",
-				run = function()
-					order[#order + 1] = 1
-				end,
-			},
-			{
-				name = "two",
-				run = function()
-					order[#order + 1] = 2
-				end,
-			},
+			name = "one",
+			run = function()
+				order[#order + 1] = 1
+			end,
 		},
 		{
-			reverse = true,
-			run = function(fn)
-				fn()
+			name = "two",
+			run = function()
+				order[#order + 1] = 2
 			end,
-		}
-	)
+		},
+	}, {
+		reverse = true,
+		run = function(fn)
+			fn()
+		end,
+	})
 	Equal(result.passed, 2)
 	Equal(order[1], 2)
 end)
@@ -459,11 +463,62 @@ Test("runner snapshots registration and callback functions", function()
 	Equal(count, 1)
 end)
 
+Test("explicit disabled immediate option never enables parked work", function()
+	local p, o = Policy()
+	o.active = false
+	p.allowImmediateWhenDisabled = true
+	local calls = 0
+	local function Call()
+		calls = calls + 1
+	end
+	Equal(T.RunOrDeferWork(p, "waypoint_mutation", "link", Call), true)
+	Equal(calls, 1)
+	o.blocked = true
+	Equal(T.RunOrDeferWork(p, "waypoint_mutation", "link", Call), false)
+	o.blocked = false
+	Equal(T.FlushWork(p), false)
+	T.ScheduleWork(p, "waypoint_mutation", "background", Call, 1)
+	o.timers[1]()
+	Equal(calls, 1)
+	o.active = true
+	T.FlushWork(p)
+	Equal(calls, 3)
+end)
+Test("numeric work keys retain full precision and primitive identity", function()
+	assert(T.WorkKey("c", 1) ~= T.WorkKey("c", 1 + 2 ^ -52))
+	Equal(T.WorkKey("c", 0), T.WorkKey("c", -0))
+	assert(T.WorkKey("c", nil) ~= T.WorkKey("c", "global"))
+	for _, key in ipairs({ {}, function() end, math.huge, 0 / 0 }) do
+		Equal(pcall(T.WorkKey, "c", key), false)
+	end
+	Equal(pcall(T.WorkKey, 1, "key"), false)
+end)
+Test("environment and diagnostic header sanitize client primitives", function()
+	local env = T.ReadEnvironment({
+		GetBuildInfo = function()
+			return "12", {}, nil, 123
+		end,
+		GetLocale = function()
+			error("unavailable")
+		end,
+	})
+	Equal(env.version, "12")
+	Equal(env.build, "unknown")
+	Equal(env.locale, nil)
+	local text = T.DiagnosticReport("Fixture", "2", env):Text()
+	assert(text:find("library=libchev 1.0.0", 1, true))
+	assert(text:find("client.locale=unknown", 1, true))
+end)
+assert(loadfile(root .. "/tests/test_window.lua"))(Test, Equal, Load)
+for _, case in ipairs(T.SelfTests()) do
+	Test(case.name, case.run)
+end
+
 local result = T.RunTests(cases, {
 	reverse = arg[2] == "reverse",
 	onFailure = function(failure)
 		print("FAIL " .. failure.name .. ": " .. failure.error)
 	end,
 })
-print(string.format("LibTogether: %d passed, %d failed", result.passed, result.failed))
+print(string.format("libchev: %d passed, %d failed", result.passed, result.failed))
 os.exit(result.failed == 0 and 0 or 1)

@@ -2,12 +2,12 @@
 -- Safe in-game checks: private Lua values only. No engine mocks, live state
 -- resets, frame creation, global writes, saved variables, hooks or timers.
 local _, namespace = ...
-local T = assert(namespace.Together, "Load LibTogether.lua first")
+local T = assert(namespace.LibChev, "Load libchev.lua first")
 
 function T.SelfTests()
 	local cases = {}
 	local function Test(name, run)
-		cases[#cases + 1] = { name = "LibTogether: " .. name, run = run }
+		cases[#cases + 1] = { name = "libchev: " .. name, run = run }
 	end
 	local Equal = T.AssertEqual
 	Test("independent bounded histories", function()

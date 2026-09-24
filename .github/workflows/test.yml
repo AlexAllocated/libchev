@@ -1,0 +1,18 @@
+name: Tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        lua: ['5.1', '5.2']
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y lua${{ matrix.lua }}
+      - run: lua${{ matrix.lua }} tests/test.lua
+      - run: lua${{ matrix.lua }} tests/test.lua . reverse
+      - run: python3 -m unittest discover -s tests -p 'test_*.py'
+      - run: find . -name '*.lua' -exec luac${{ matrix.lua }} -p {} \;
+      - run: git diff --check

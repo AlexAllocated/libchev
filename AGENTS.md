@@ -1,4 +1,4 @@
-# LibTogether
+# libchev
 
 - The library is privately embedded into each addon's loader namespace. Never create a global library registry or replace another addon's implementation at runtime.
 - All state containers, configuration tables, keys, fixtures, adapters and callbacks must be addon-owned. Foreign values may enter only primitive sanitizers; never traverse foreign objects or invoke their metamethods.

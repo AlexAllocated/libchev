@@ -2,14 +2,14 @@
 -- Private embedding: every addon receives its own library through its loader
 -- namespace. No global registry, Blizzard mutation, hooks, events or saved data.
 local _, namespace = ...
-local Together = { VERSION = "1.0.0", API_VERSION = 1 }
+local LibChev = { VERSION = "1.0.0", API_VERSION = 1 }
 local unpackValues = unpack or table.unpack
 local secret = type(issecretvalue) == "function" and issecretvalue or nil
 local accessible = type(canaccessvalue) == "function" and canaccessvalue or nil
 local accessibleTable = type(canaccesstable) == "function" and canaccesstable or nil
 local stackTrace = type(debugstack) == "function" and debugstack or nil
 
-function Together.CanAccess(value)
+function LibChev.CanAccess(value)
 	if accessible then
 		local ok, allowed = pcall(accessible, value)
 		if not ok or allowed ~= true then
@@ -26,8 +26,8 @@ function Together.CanAccess(value)
 end
 
 -- No foreign __tostring, recursive dumps, table traversal or secret coercion.
-function Together.Text(value, fallback)
-	if not Together.CanAccess(value) then
+function LibChev.Text(value, fallback)
+	if not LibChev.CanAccess(value) then
 		return fallback or "<inaccessible>"
 	end
 	local kind = type(value)
@@ -43,8 +43,8 @@ function Together.Text(value, fallback)
 	return fallback or ("<" .. kind .. ">")
 end
 
-function Together.Number(value)
-	if not Together.CanAccess(value) or type(value) ~= "number" then
+function LibChev.Number(value)
+	if not LibChev.CanAccess(value) or type(value) ~= "number" then
 		return nil
 	end
 	if value ~= value or value == math.huge or value == -math.huge then
@@ -55,8 +55,8 @@ end
 
 -- Only for regions CREATED AND OWNED by the caller. This does not establish
 -- ownership or grant permission to modify arbitrary Blizzard frames.
-function Together.CanMutateOwnedRegion(region)
-	if not Together.CanAccess(region) then
+function LibChev.CanMutateOwnedRegion(region)
+	if not LibChev.CanAccess(region) then
 		return false
 	end
 	local kind = type(region)
@@ -73,65 +73,65 @@ function Together.CanMutateOwnedRegion(region)
 		local read, method = pcall(function()
 			return region[name]
 		end)
-		if not read or not Together.CanAccess(method) or type(method) ~= "function" then
+		if not read or not LibChev.CanAccess(method) or type(method) ~= "function" then
 			return false
 		end
 		local ok, result = pcall(method, region)
-		if not ok or not Together.CanAccess(result) or result ~= false then
+		if not ok or not LibChev.CanAccess(result) or result ~= false then
 			return false
 		end
 	end
 	return true
 end
 
-function Together.ReadEnvironment(api)
+function LibChev.ReadEnvironment(api)
 	local environment = {}
 	if type(api.GetBuildInfo) == "function" then
 		local ok, version, build, _, interface = pcall(api.GetBuildInfo)
 		if ok then
-			environment.version = Together.Text(version, "unknown")
-			environment.build = Together.Text(build, "unknown")
-			environment.interface = Together.Text(interface, "unknown")
+			environment.version = LibChev.Text(version, "unknown")
+			environment.build = LibChev.Text(build, "unknown")
+			environment.interface = LibChev.Text(interface, "unknown")
 		end
 	end
 	if type(api.GetLocale) == "function" then
 		local ok, locale = pcall(api.GetLocale)
 		if ok then
-			environment.locale = Together.Text(locale, "unknown")
+			environment.locale = LibChev.Text(locale, "unknown")
 		end
 	end
 	return environment
 end
 
 local function Limit(value, default, maximum)
-	return math.max(1, math.min(maximum, math.floor(Together.Number(value) or default)))
+	return math.max(1, math.min(maximum, math.floor(LibChev.Number(value) or default)))
 end
 
-function Together.Category(value, fallback)
-	if not Together.CanAccess(value) or type(value) ~= "string" then
+function LibChev.Category(value, fallback)
+	if not LibChev.CanAccess(value) or type(value) ~= "string" then
 		return fallback or "DEBUG"
 	end
 	local normalized = value:sub(1, 64):match("^%s*(.-)%s*$"):upper():gsub("%s+", "_"):gsub("[^%w_%-]", "")
 	return normalized ~= "" and normalized or (fallback or "DEBUG")
 end
 
-function Together.NewLog()
+function LibChev.NewLog()
 	return { entries = {}, sequence = 0, dropped = 0, chars = 0 }
 end
 
 -- Dense, bounded entries intentionally support existing addon filter/view code.
 -- Store, limits and entries are PRIVATE owned tables, never foreign API results.
-function Together.AppendLog(store, text, category, elapsed, limits)
+function LibChev.AppendLog(store, text, category, elapsed, limits)
 	limits = limits or {}
 	local maxLines = Limit(limits.maxLines, 1000, 10000)
 	local maxChars = Limit(limits.maxChars, 200000, 2000000)
 	local maxEntry = math.min(maxChars, Limit(limits.maxEntry, 4096, 16384))
-	text = Together.Text(text):sub(1, maxEntry)
+	text = LibChev.Text(text):sub(1, maxEntry)
 	store.sequence = store.sequence + 1
 	local entry = {
 		text = text,
-		category = Together.Category(category),
-		elapsed = Together.Number(elapsed),
+		category = LibChev.Category(category),
+		elapsed = LibChev.Number(elapsed),
 		sequence = store.sequence,
 	}
 	store.entries[#store.entries + 1] = entry
@@ -144,25 +144,25 @@ function Together.AppendLog(store, text, category, elapsed, limits)
 	return entry
 end
 
-function Together.FormatEntry(entry)
-	local elapsed = Together.Number(entry.elapsed)
+function LibChev.FormatEntry(entry)
+	local elapsed = LibChev.Number(entry.elapsed)
 	local time = elapsed and string.format("%.3f ", elapsed) or ""
 	return "["
-		.. Together.Category(entry.category)
+		.. LibChev.Category(entry.category)
 		.. "] ["
 		.. time
 		.. "#"
-		.. Together.Text(entry.sequence)
+		.. LibChev.Text(entry.sequence)
 		.. "] "
-		.. Together.Text(entry.text)
+		.. LibChev.Text(entry.text)
 end
 
-function Together.NewCounters()
+function LibChev.NewCounters()
 	return { counts = {}, size = 0 }
 end
 
-function Together.Count(store, reason, maxReasons, maxCount)
-	if not Together.CanAccess(reason) or type(reason) ~= "string" or #reason > 48 or not reason:match("^[%w_%-]+$") then
+function LibChev.Count(store, reason, maxReasons, maxCount)
+	if not LibChev.CanAccess(reason) or type(reason) ~= "string" or #reason > 48 or not reason:match("^[%w_%-]+$") then
 		return nil
 	end
 	if store.counts[reason] == nil then
@@ -176,7 +176,7 @@ function Together.Count(store, reason, maxReasons, maxCount)
 	return count
 end
 
-function Together.CounterSnapshot(store)
+function LibChev.CounterSnapshot(store)
 	local result = {}
 	for reason, count in pairs(store.counts) do
 		result[#result + 1] = { reason = reason, count = count }
@@ -187,13 +187,13 @@ function Together.CounterSnapshot(store)
 	return result
 end
 
-function Together.NewReport(maxChars)
+function LibChev.NewReport(maxChars)
 	local report = { lines = {}, chars = 0, limit = Limit(maxChars, 32768, 2000000), truncated = false }
 	function report:Add(label, value)
 		if self.truncated then
 			return false
 		end
-		local line = Together.Text(label):sub(1, 128) .. "=" .. Together.Text(value, "unknown"):sub(1, 4096)
+		local line = LibChev.Text(label):sub(1, 128) .. "=" .. LibChev.Text(value, "unknown"):sub(1, 4096)
 		local remaining = self.limit - self.chars - (#self.lines > 0 and 1 or 0)
 		if #line > remaining then
 			-- Reserve room for an explicit marker inside the overall bound.
@@ -215,11 +215,11 @@ function Together.NewReport(maxChars)
 	return report
 end
 
-function Together.DiagnosticReport(addon, version, environment)
-	local report = Together.NewReport()
+function LibChev.DiagnosticReport(addon, version, environment)
+	local report = LibChev.NewReport()
 	report:Add("addon", addon)
 	report:Add("version", version)
-	report:Add("library", "LibTogether " .. Together.VERSION)
+	report:Add("library", "libchev " .. LibChev.VERSION)
 	for _, key in ipairs({ "version", "build", "interface", "locale" }) do
 		report:Add("client." .. key, environment[key])
 	end
@@ -228,16 +228,16 @@ end
 
 -- An error boundary contains failures, NOT taint. onError belongs to the caller;
 -- it is itself isolated and never installed as a global error handler.
-function Together.GuardCall(callback, onError, ...)
+function LibChev.GuardCall(callback, onError, ...)
 	local args, count = { ... }, select("#", ...)
 	return xpcall(function()
 		return callback(unpackValues(args, 1, count))
 	end, function(err)
-		local detail = Together.Text(err):sub(1, 1200)
+		local detail = LibChev.Text(err):sub(1, 1200)
 		if stackTrace then
 			local ok, stack = pcall(stackTrace, 2, 12, 12)
 			if ok then
-				detail = detail .. "\n" .. Together.Text(stack):sub(1, 4096)
+				detail = detail .. "\n" .. LibChev.Text(stack):sub(1, 4096)
 			end
 		end
 		if onError then
@@ -248,18 +248,18 @@ function Together.GuardCall(callback, onError, ...)
 end
 
 -- State helpers accept OWNED tables/keys only. They never inspect Blizzard data.
-function Together.WeakKeys()
+function LibChev.WeakKeys()
 	return setmetatable({}, { __mode = "k" })
 end
 
-function Together.Advance(owner, key)
+function LibChev.Advance(owner, key)
 	owner[key] = (owner[key] or 0) + 1
 	return owner[key]
 end
 
 -- Capture multiple independent lifetimes (e.g. request AND loading/enable cycle).
 -- A stale callback cannot become valid again when a newer request completes.
-function Together.Fence(owner, keys, callback)
+function LibChev.Fence(owner, keys, callback)
 	local captured = {}
 	for index, key in ipairs(keys) do
 		captured[index] = { key, owner[key] }
@@ -274,25 +274,35 @@ function Together.Fence(owner, keys, callback)
 	end
 end
 
-function Together.NewWorkState()
+function LibChev.NewWorkState()
 	return { entries = {}, generations = {} }
 end
 
 local function WorkKey(workClass, key)
-	-- Length prefixes prevent ambiguous class/key pairs containing separators.
-	local classText, keyText = Together.Text(workClass, "work"), Together.Text(key, "global")
-	return #classText .. ":" .. classText .. ":" .. type(key) .. ":" .. keyText
+	-- Owned primitive keys only. Preserve full double precision; tostring can
+	-- alias adjacent numeric keys on Lua 5.1/5.2.
+	assert(type(workClass) == "string" and #workClass > 0, "workClass must be an owned nonempty string")
+	local kind = type(key)
+	assert(kind == "nil" or kind == "string" or kind == "boolean" or kind == "number", "key must be an owned primitive")
+	local keyText
+	if kind == "number" then
+		assert(LibChev.Number(key), "key must be finite")
+		keyText = key == 0 and "0" or string.format("%.17g", key)
+	else
+		keyText = LibChev.Text(key, "global")
+	end
+	return #workClass .. ":" .. workClass .. ":" .. kind .. ":" .. keyText
 end
-Together.WorkKey = WorkKey
+LibChev.WorkKey = WorkKey
 
 -- Policy is an owned adapter: getState, enabled, blocked, delay, defaultDelay,
 -- invoke. No library code guesses whether a Blizzard operation is safe.
-function Together.ScheduleWork(policy, workClass, key, callback, delay, reason)
+function LibChev.ScheduleWork(policy, workClass, key, callback, delay, reason)
 	if type(callback) ~= "function" then
 		return false
 	end
 	local state, workKey = policy.getState(), WorkKey(workClass, key)
-	local generation = Together.Advance(state.generations, workKey)
+	local generation = LibChev.Advance(state.generations, workKey)
 	local entry = {
 		workClass = workClass,
 		key = key,
@@ -312,7 +322,7 @@ function Together.ScheduleWork(policy, workClass, key, callback, delay, reason)
 		state.entries[workKey], state.generations[workKey] = nil, nil
 		policy.invoke(workClass, key, reason, callback)
 	end
-	local seconds = math.max(0, Together.Number(delay) or (policy.defaultDelay and policy.defaultDelay(workClass)) or 0)
+	local seconds = math.max(0, LibChev.Number(delay) or (policy.defaultDelay and policy.defaultDelay(workClass)) or 0)
 	if seconds == 0 or not policy.delay then
 		run()
 	else
@@ -321,12 +331,12 @@ function Together.ScheduleWork(policy, workClass, key, callback, delay, reason)
 	return true
 end
 
-function Together.RunOrDeferWork(policy, workClass, key, callback, delay, reason)
+function LibChev.RunOrDeferWork(policy, workClass, key, callback, delay, reason)
 	if type(callback) ~= "function" then
 		return false
 	end
 	if (not policy.enabled() and not policy.allowImmediateWhenDisabled) or policy.blocked(workClass) then
-		Together.ScheduleWork(policy, workClass, key, callback, delay, reason)
+		LibChev.ScheduleWork(policy, workClass, key, callback, delay, reason)
 		return false
 	end
 	local state, workKey = policy.getState(), WorkKey(workClass, key)
@@ -335,7 +345,7 @@ function Together.RunOrDeferWork(policy, workClass, key, callback, delay, reason
 	return true
 end
 
-function Together.FlushWork(policy, reason)
+function LibChev.FlushWork(policy, reason)
 	local state = policy.getState()
 	if not policy.enabled() then
 		return false
@@ -350,20 +360,16 @@ function Together.FlushWork(policy, reason)
 		end
 		local key, entry = pair[1], pair[2]
 		if state.entries[key] == entry then
-			Together.ScheduleWork(policy, entry.workClass, entry.key, entry.callback, 0, reason or entry.reason)
+			LibChev.ScheduleWork(policy, entry.workClass, entry.key, entry.callback, 0, reason or entry.reason)
 		end
 	end
 	return true
 end
 
-function Together.AssertEqual(actual, expected, message)
+function LibChev.AssertEqual(actual, expected, message)
 	if actual ~= expected then
 		error(
-			(message or "values differ")
-				.. ": expected "
-				.. Together.Text(expected)
-				.. ", got "
-				.. Together.Text(actual),
+			(message or "values differ") .. ": expected " .. LibChev.Text(expected) .. ", got " .. LibChev.Text(actual),
 			2
 		)
 	end
@@ -372,7 +378,7 @@ end
 -- Cases are private {name, run} records. Fixtures/mocks are supplied by each
 -- addon; this runner never snapshots or patches globals or live addon state.
 -- Teardown runs even after setup/body failure. Registration is snapshotted.
-function Together.RunTests(cases, options)
+function LibChev.RunTests(cases, options)
 	options = options or {}
 	local pending, result = {}, { total = #cases, passed = 0, failed = 0, failures = {} }
 	for index, case in ipairs(cases) do
@@ -381,7 +387,7 @@ function Together.RunTests(cases, options)
 	for index = 1, #pending do
 		local case = pending[options.reverse and (#pending - index + 1) or index]
 		local fixture
-		local ok, err = Together.GuardCall(function()
+		local ok, err = LibChev.GuardCall(function()
 			if options.setup then
 				fixture = options.setup(case)
 			end
@@ -392,7 +398,7 @@ function Together.RunTests(cases, options)
 			end
 		end)
 		if options.teardown then
-			local clean, cleanupError = Together.GuardCall(options.teardown, nil, fixture, case)
+			local clean, cleanupError = LibChev.GuardCall(options.teardown, nil, fixture, case)
 			if not clean then
 				err = ok and cleanupError or (err .. "\nTeardown: " .. cleanupError)
 				ok = false
@@ -402,7 +408,7 @@ function Together.RunTests(cases, options)
 			result.passed = result.passed + 1
 		else
 			result.failed = result.failed + 1
-			local failure = { name = Together.Text(case.name), error = err }
+			local failure = { name = LibChev.Text(case.name), error = err }
 			result.failures[#result.failures + 1] = failure
 			if options.onFailure then
 				pcall(options.onFailure, failure)
@@ -412,11 +418,11 @@ function Together.RunTests(cases, options)
 	return result
 end
 
-function Together.TestSummary(result)
+function LibChev.TestSummary(result)
 	return string.format("Test summary: %d passed, %d failed (%d total).", result.passed, result.failed, result.total)
 end
 
 if type(namespace) == "table" then
-	namespace.Together = Together
+	namespace.LibChev = LibChev
 end
-return Together
+return LibChev
