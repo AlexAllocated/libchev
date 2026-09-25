@@ -4,8 +4,16 @@ local T = Load()
 
 local function Fixture(deniedIndex)
 	local state = { regions = {}, writes = 0, restricted = false, range = 300, calls = {} }
-	local function Region(kind)
-		local region = { kind = kind, scripts = {}, shown = false, text = "", value = 0 }
+	local function Region(kind, parent)
+		local region = {
+			kind = kind,
+			parent = parent,
+			scripts = {},
+			shown = false,
+			text = "",
+			value = 0,
+			level = parent and parent.level + 1 or 0,
+		}
 		state.regions[#state.regions + 1] = region
 		region.denied = #state.regions == deniedIndex
 		local function Event(name, ...)
@@ -18,10 +26,14 @@ local function Fixture(deniedIndex)
 				if method == "CreateTexture" or method == "CreateFontString" then
 					return function(_, name, layer, template)
 						Equal(name, nil)
-						local child = Region(method)
+						local child = Region(method, region)
 						child.template = template
 						child.fillAnchors = true
 						return child
+					end
+				elseif method == "GetFrameLevel" then
+					return function()
+						return region.level
 					end
 				elseif method == "GetText" then
 					return function()
@@ -56,7 +68,15 @@ local function Fixture(deniedIndex)
 					assert(not region.denied, "mutation of denied child")
 					assert(state.restricted == false, "mutation while restricted")
 					state.writes = state.writes + 1
-					if method == "SetScript" then
+					if method == "SetToplevel" then
+						region.topLevel = ...
+					elseif method == "SetFlattensRenderLayers" then
+						region.flatten = ...
+					elseif method == "SetFrameStrata" then
+						region.strata = ...
+					elseif method == "SetFrameLevel" then
+						region.level = ...
+					elseif method == "SetScript" then
 						local event, callback = ...
 						region.scripts[event] = callback
 					elseif method == "SetText" then
@@ -119,9 +139,9 @@ local function Fixture(deniedIndex)
 				end
 				return false
 			end,
-			createFrame = function(kind, name)
+			createFrame = function(kind, name, parent)
 				Equal(name, nil)
-				return Region(kind)
+				return Region(kind, parent)
 			end,
 		},
 		reload = function()
@@ -213,6 +233,27 @@ Test("debug window guards every created region before its first mutation", funct
 		local s, c = Fixture(index)
 		Equal(T.OpenDebugWindow(c), false)
 		Equal(#s.regions, index)
+	end
+end)
+
+Test("debug console children and menus stay inside their own native stacking group", function()
+	for _ = 1, 3 do
+		local s, c = Fixture()
+		assert(T.OpenDebugWindow(c))
+		Equal(c.window.topLevel, true)
+		Equal(c.window.flatten, true)
+		Equal(c.window.strata, "DIALOG")
+		for _, region in ipairs(s.regions) do
+			if region ~= c.window then
+				Equal(rawget(region, "strata"), nil)
+				local ancestor = region
+				repeat
+					ancestor = rawget(ancestor, "parent")
+				until ancestor == nil or ancestor == c.window
+				Equal(ancestor, c.window)
+			end
+		end
+		assert(c.window.Popup.level > c.window.TextBox.level)
 	end
 end)
 
