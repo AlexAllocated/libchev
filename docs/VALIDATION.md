@@ -20,3 +20,9 @@ An addon integration branch or pull request is not an addon release. Consumer ve
 User-reported Forever 1.60.1 build 70009/interface 16001 results for consumers of 1.1.0: QuestTogether 324/324 passed; PvPTogether 15/15 passed; NoPoizen 122/123 passed, with `CoreTests.lua:138` raising division by zero while constructing a NaN test fixture. Consumer fixes remove undefined arithmetic from client-loaded fixtures while retaining NaN rejection coverage offline. PvPTogether supplies the optional clock adapter for shared timestamp formatting.
 
 The 1.1.1 window uses the same native texture templates and artwork referenced by the installed Retail and Forever FrameXML. All regions remain unnamed and independently guarded. Offline region simulations check every created region against denied ownership and restriction changes; they do not establish live appearance or taint safety. The new styling and corrected consumer suites still require a live rerun. Shared test presentation has one final summary, with bounded-history and fallback coverage.
+
+## 1.1.2 texture geometry correction
+
+A captured Forever window showed 1.1.1 border artwork stretched across the panel. Version 1.1.2 clears inherited texture anchors and explicitly sizes corners, border strips and the title background to the native FrameXML dimensions. The new geometry regression fails against 1.1.1 and passes with the fix; all 88 library checks pass forward/reverse on Lua 5.1/5.2, alongside 24 vendor tests.
+
+The fix was installed in all three addons through the exact candidate revision `763e5bda52f187067adbb398b72bf5bbbb538cbe`. The user confirmed the corrected appearance in-game and requested stable addon releases. This is visual confirmation of the frame fix, not a new claim about combat/restriction behavior or all addon features. Stable release payloads retain those validated runtime bytes.
