@@ -130,6 +130,10 @@ local function Create(controller)
 	Call(controller, frame, "SetSize", 900, 560)
 	Call(controller, frame, "SetPoint", "CENTER")
 	Call(controller, frame, "SetFrameStrata", "DIALOG")
+	-- Keep the window and its children in one native render group, and let
+	-- clicks on any child raise the whole window instead of interleaving UI.
+	Call(controller, frame, "SetToplevel", true)
+	Call(controller, frame, "SetFlattensRenderLayers", true)
 	Call(controller, frame, "SetClampedToScreen", true)
 	Call(controller, frame, "EnableMouse", true)
 	Call(controller, frame, "SetMovable", true)
@@ -266,7 +270,13 @@ local function Create(controller)
 	Call(controller, state.popup, "Hide")
 	Call(controller, state.popup, "SetPoint", "TOPLEFT", state.category, "BOTTOMLEFT", 0, -2)
 	Call(controller, state.popup, "SetWidth", 240)
-	Call(controller, state.popup, "SetFrameStrata", "TOOLTIP")
+	-- The menu belongs above our controls, but must not escape the window's
+	-- stacking group and cover another addon's foreground console.
+	local level = LibChev.Number(Call(controller, frame, "GetFrameLevel"))
+	if not level then
+		error("debug window frame level unavailable", 0)
+	end
+	Call(controller, state.popup, "SetFrameLevel", level + 3)
 	Call(controller, state.popup, "EnableMouse", true)
 	Call(controller, state.popup, "EnableMouseWheel", true)
 	TiledBackground(state.popup, "Interface\\FrameGeneral\\UI-Background-Marble")

@@ -26,3 +26,9 @@ The 1.1.1 window uses the same native texture templates and artwork referenced b
 A captured Forever window showed 1.1.1 border artwork stretched across the panel. Version 1.1.2 clears inherited texture anchors and explicitly sizes corners, border strips and the title background to the native FrameXML dimensions. The new geometry regression fails against 1.1.1 and passes with the fix; all 88 library checks pass forward/reverse on Lua 5.1/5.2, alongside 24 vendor tests.
 
 The fix was installed in all three addons through the exact candidate revision `763e5bda52f187067adbb398b72bf5bbbb538cbe`. The user confirmed the corrected appearance in-game and requested stable addon releases. This is visual confirmation of the frame fix, not a new claim about combat/restriction behavior or all addon features. Stable release payloads retain those validated runtime bytes.
+
+## 1.1.3 console stacking correction
+
+Keep the debug console and its controls in one native stacking group. The root is a top-level DIALOG frame with flattened child render layers; its category menu remains inside that group instead of using a global TOOLTIP layer. Raising another window now raises its contents together. All changes apply only to addon-owned frames.
+
+Validation: 89 library checks pass in both orders under Lua 5.1/5.2, and 24 Python vendor checks pass. The stacking regression checks ownership and the root/menu configuration. This is offline validation; interaction with multiple live windows remains a separate client check.
