@@ -12,7 +12,7 @@ import tempfile
 SOURCE = Path(__file__).resolve().parents[1]
 FILES_V1_0 = ("libchev.lua", "ReportWindow.lua", "SelfTests.lua", "LICENSE")
 FILES = ("libchev.lua", "Debug.lua", "DebugWindow.lua", "ReportWindow.lua", "SelfTests.lua", "LICENSE")
-VERSION_FILES = {"1.0.0": FILES_V1_0, "1.1.0": FILES, "1.1.1": FILES}
+VERSION_FILES = {"1.0.0": FILES_V1_0, "1.1.0": FILES, "1.1.1": FILES, "1.1.2": FILES}
 REPOSITORY = "https://github.com/AlexAllocated/libchev"
 LEGACY_FILES = ("LibTogether.lua", "ReportWindow.lua", "SelfTests.lua", "LICENSE")
 LEGACY_REPOSITORY = "https://github.com/AlexAllocated/LibTogether"

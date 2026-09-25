@@ -16,8 +16,12 @@ local function Fixture(deniedIndex)
 		return setmetatable(region, {
 			__index = function(_, method)
 				if method == "CreateTexture" or method == "CreateFontString" then
-					return function()
-						return Region(method)
+					return function(_, name, layer, template)
+						Equal(name, nil)
+						local child = Region(method)
+						child.template = template
+						child.fillAnchors = true
+						return child
 					end
 				elseif method == "GetText" then
 					return function()
@@ -64,6 +68,12 @@ local function Fixture(deniedIndex)
 					elseif method == "SetVerticalScroll" then
 						region.scroll = ...
 						Event("OnVerticalScroll", region.scroll)
+					elseif method == "ClearAllPoints" then
+						region.fillAnchors = false
+					elseif method == "SetAllPoints" then
+						region.fillAnchors = true
+					elseif method == "SetSize" then
+						region.width, region.height = ...
 					elseif method == "SetWidth" then
 						region.width = ...
 					elseif method == "SetHeight" then
@@ -204,6 +214,27 @@ Test("debug window guards every created region before its first mutation", funct
 		Equal(T.OpenDebugWindow(c), false)
 		Equal(#s.regions, index)
 	end
+end)
+
+Test("native frame artwork has bounded dimensions and no inherited fill anchors", function()
+	local s, c = Fixture()
+	assert(T.OpenDebugWindow(c))
+	local pieces = 0
+	for _, region in ipairs(s.regions) do
+		local template = rawget(region, "template")
+		if template and template:find("UI-Frame-", 1, true) then
+			pieces = pieces + 1
+			Equal(region.fillAnchors, false)
+			local width, height = rawget(region, "width"), rawget(region, "height")
+			assert(width and height and width > 0 and height > 0, "artwork needs explicit dimensions")
+			if template:find("Corner", 1, true) then
+				assert(width <= 40 and height <= 40, "corners must stay small")
+			else
+				assert(math.min(width, height) <= 28, "border strips must remain thin")
+			end
+		end
+	end
+	Equal(pieces, 9)
 end)
 
 Test("debug window fails closed before creation on unknown or failed policy", function()

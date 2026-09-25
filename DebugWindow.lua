@@ -85,12 +85,18 @@ local function Create(controller)
 		Call(controller, texture, "SetColorTexture", shade, shade, shade, 0.98)
 		return texture
 	end
-	local function NativeTexture(parent, template, layer)
+	local function NativeTexture(parent, template, layer, width, height)
 		-- Texture-only templates supply Blizzard's artwork, never frame scripts,
 		-- shared pools or globally named children. The new region remains ours.
 		local texture = Call(controller, parent, "CreateTexture", nil, layer or "BORDER", template)
 		if not Guard(controller, texture) then
 			error("debug window texture denied", 0)
+		end
+		-- Lua-created template regions must not retain inherited fill anchors.
+		-- Give border pieces explicit dimensions before anchoring them below.
+		Call(controller, texture, "ClearAllPoints")
+		if width and height then
+			Call(controller, texture, "SetSize", width, height)
 		end
 		return texture
 	end
@@ -134,25 +140,25 @@ local function Create(controller)
 		Call(controller, frame, "SetMinResize", 740, 420)
 	end
 	TiledBackground(frame, "Interface\\FrameGeneral\\UI-Background-Marble")
-	local topLeft = NativeTexture(frame, "UI-Frame-TopLeftCorner", "OVERLAY")
+	local topLeft = NativeTexture(frame, "UI-Frame-TopLeftCorner", "OVERLAY", 33, 33)
 	Call(controller, topLeft, "SetPoint", "TOPLEFT", -6, 1)
-	local topRight = NativeTexture(frame, "UI-Frame-TopCornerRight", "OVERLAY")
+	local topRight = NativeTexture(frame, "UI-Frame-TopCornerRight", "OVERLAY", 33, 33)
 	Call(controller, topRight, "SetPoint", "TOPRIGHT", 0, 1)
-	local bottomLeft = NativeTexture(frame, "UI-Frame-BotCornerLeft")
+	local bottomLeft = NativeTexture(frame, "UI-Frame-BotCornerLeft", "BORDER", 14, 14)
 	Call(controller, bottomLeft, "SetPoint", "BOTTOMLEFT", -6, -5)
-	local bottomRight = NativeTexture(frame, "UI-Frame-BotCornerRight")
+	local bottomRight = NativeTexture(frame, "UI-Frame-BotCornerRight", "BORDER", 11, 11)
 	Call(controller, bottomRight, "SetPoint", "BOTTOMRIGHT", 0, -5)
 	for _, edge in ipairs({
-		{ "_UI-Frame-TitleTile", "TOPLEFT", topLeft, "TOPRIGHT", "TOPRIGHT", topRight, "TOPLEFT" },
-		{ "_UI-Frame-Bot", "BOTTOMLEFT", bottomLeft, "BOTTOMRIGHT", "BOTTOMRIGHT", bottomRight, "BOTTOMLEFT" },
-		{ "!UI-Frame-LeftTile", "TOPLEFT", topLeft, "BOTTOMLEFT", "BOTTOMLEFT", bottomLeft, "TOPLEFT" },
-		{ "!UI-Frame-RightTile", "TOPRIGHT", topRight, "BOTTOMRIGHT", "BOTTOMRIGHT", bottomRight, "TOPRIGHT" },
+		{ "_UI-Frame-TitleTile", "TOPLEFT", topLeft, "TOPRIGHT", "TOPRIGHT", topRight, "TOPLEFT", 256, 28 },
+		{ "_UI-Frame-Bot", "BOTTOMLEFT", bottomLeft, "BOTTOMRIGHT", "BOTTOMRIGHT", bottomRight, "BOTTOMLEFT", 256, 9 },
+		{ "!UI-Frame-LeftTile", "TOPLEFT", topLeft, "BOTTOMLEFT", "BOTTOMLEFT", bottomLeft, "TOPLEFT", 16, 256 },
+		{ "!UI-Frame-RightTile", "TOPRIGHT", topRight, "BOTTOMRIGHT", "BOTTOMRIGHT", bottomRight, "TOPRIGHT", 10, 256 },
 	}) do
-		local texture = NativeTexture(frame, edge[1])
+		local texture = NativeTexture(frame, edge[1], "BORDER", edge[8], edge[9])
 		Call(controller, texture, "SetPoint", edge[2], edge[3], edge[4])
 		Call(controller, texture, "SetPoint", edge[5], edge[6], edge[7])
 	end
-	local titleBackground = NativeTexture(frame, "_UI-Frame-TitleTileBg", "BACKGROUND")
+	local titleBackground = NativeTexture(frame, "_UI-Frame-TitleTileBg", "BACKGROUND", 256, 18)
 	Call(controller, titleBackground, "SetPoint", "TOPLEFT", 2, -1)
 	Call(controller, titleBackground, "SetPoint", "TOPRIGHT", -25, -1)
 	state.frame = frame
