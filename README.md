@@ -2,14 +2,16 @@
 
 Private, embedded Lua utilities for World of Warcraft addons. Each addon loads its own copy into its loader namespace. There is no global registry, shared mutable state, or runtime replacement of another addon's library.
 
-libchev provides bounded structured logs, capped counters, diagnostic reports and a copy window, callback error containment, generation fences, deferred work with injected policies, and a fixture-based test runner. Quest, poison, nameplate, secure-boundary, and lifecycle decisions belong to consumers.
+libchev provides bounded structured logs, capped counters, diagnostic reports and a copy window, welcome announcements with feedback links, callback error containment, generation fences, deferred work with injected policies, and a fixture-based test runner. Quest, poison, nameplate, secure-boundary, and lifecycle decisions belong to consumers.
+
+`NewWelcomeController(policy)` announces once per controller lifetime. Consumers supply their version reader, chat writer, supported-client text, settings command, fixed CurseForge/GitHub URLs, unique link type, public link-registration adapter and UI restriction/ownership policy. `Announce()` emits clickable labels only after successful registration; otherwise it prints full URLs. `HandleLink(link)` accepts only the two exact registered link strings, never arbitrary URL payloads or foreign link/context tables. Each controller owns a separate compact copy window, and denied UI falls back to the fixed URL in chat. Registration and login timing remain consumer decisions. Recreate the controller for a new login/UI session; no SavedVariables are used.
 
 ## Embed an immutable revision
 
 From a libchev checkout:
 
 ```sh
-python3 scripts/vendor.py /path/to/YourAddon --ref v1.1.3
+python3 scripts/vendor.py /path/to/YourAddon --ref v1.2.0
 python3 scripts/vendor.py /path/to/YourAddon --check
 ```
 
@@ -35,7 +37,7 @@ local log = LibChev.NewLog()
 LibChev.AppendLog(log, "Addon initialized", "CORE")
 ```
 
-The core exports `VERSION = "1.1.3"` and `API_VERSION = 1`. Optional modules extend only that same private object. Never load the library via a separate addon or publish the object in a global registry. Different embedded versions may coexist in either addon load order.
+The core exports `VERSION = "1.2.0"` and `API_VERSION = 1`. Optional modules extend only that same private object. Never load the library via a separate addon or publish the object in a global registry. Different embedded versions may coexist in either addon load order.
 
 ## One debug interface across addons
 

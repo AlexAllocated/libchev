@@ -20,24 +20,40 @@ function LibChev.OpenReportWindow(owner, text, policy)
 		local success, allowed = pcall(policy.canMutate, region)
 		return success and LibChev.CanAccess(allowed) and allowed == true
 	end
+	local copyLink = policy.copyLink == true
+	local width, height = copyLink and 620 or 660, copyLink and 200 or 460
 	local frame = owner.diagnosticsWindow
 	if not frame then
-		frame = policy.createFrame("Frame", nil, policy.parent)
+		frame = policy.createFrame("Frame", nil, policy.parent, copyLink and "BackdropTemplate" or nil)
 		if not CanMutate(frame) then
 			return false
 		end
-		frame:SetSize(660, 460)
+		frame:SetSize(width, height)
 		frame:SetPoint("CENTER")
 		frame:SetFrameStrata("DIALOG")
 		frame:SetClampedToScreen(true)
 		frame:EnableMouse(true)
 		frame:Hide()
+		if copyLink then
+			frame:SetToplevel(true)
+			if frame.SetFlattensRenderLayers then
+				frame:SetFlattensRenderLayers(true)
+			end
+			frame:SetBackdrop({
+				bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+				edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+				tile = true,
+				tileSize = 32,
+				edgeSize = 32,
+				insets = { left = 11, right = 12, top = 12, bottom = 11 },
+			})
+		end
 		local background = frame:CreateTexture(nil, "BACKGROUND")
 		if not CanMutate(background) then
 			return false
 		end
 		background:SetAllPoints()
-		background:SetColorTexture(0.04, 0.04, 0.04, 0.97)
+		background:SetColorTexture(0.04, 0.04, 0.04, copyLink and 0 or 0.97)
 		local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 		if not CanMutate(title) then
 			return false
@@ -49,7 +65,10 @@ function LibChev.OpenReportWindow(owner, text, policy)
 			return false
 		end
 		hint:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -10)
-		hint:SetText("Report selected: press Ctrl+C to copy. Use the mouse wheel to scroll.")
+		hint:SetText(
+			copyLink and "Press Ctrl+C to copy this address, then open it in your browser."
+				or "Report selected: press Ctrl+C to copy. Use the mouse wheel to scroll."
+		)
 		local scroll = policy.createFrame("ScrollFrame", nil, frame)
 		if not CanMutate(scroll) then
 			return false
@@ -61,7 +80,7 @@ function LibChev.OpenReportWindow(owner, text, policy)
 		if not CanMutate(box) then
 			return false
 		end
-		box:SetWidth(600)
+		box:SetWidth(width - 60)
 		box:SetHeight(1)
 		box:SetMultiLine(true)
 		box:SetAutoFocus(false)
@@ -72,7 +91,7 @@ function LibChev.OpenReportWindow(owner, text, policy)
 		if not CanMutate(measure) then
 			return false
 		end
-		measure:SetWidth(592)
+		measure:SetWidth(width - 68)
 		measure:Hide()
 		frame.TextBox, frame.Scroll, frame.Measure = box, scroll, measure
 		scroll:SetScript("OnMouseWheel", function(_, delta)
@@ -122,7 +141,7 @@ function LibChev.OpenReportWindow(owner, text, policy)
 		end
 		selectAll:SetSize(120, 24)
 		selectAll:SetPoint("BOTTOMLEFT", 20, 16)
-		selectAll:SetText("Select Report")
+		selectAll:SetText(copyLink and "Select Link" or "Select Report")
 		selectAll:SetScript("OnClick", function()
 			if CanMutate(box) then
 				box:SetFocus()
