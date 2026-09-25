@@ -210,7 +210,7 @@ Test("shared test commands replace TEST history show results and retain other ca
 	assert(not c:GetText():find("1 passed, 0 failed", 1, true))
 	assert(not c:GetText():find("private detail", 1, true))
 	Equal(#c:GetEntries("STATE", ""), 1)
-	assert(c:GetText():find("library=libchev 1.1.2", 1, true))
+	assert(c:GetText():find("library=libchev 1.1.3", 1, true))
 end)
 Test("shared tests preserve visible ALL view but clear its search", function()
 	local c, L = Fixture()
