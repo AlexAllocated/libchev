@@ -39,6 +39,10 @@ local function Fixture(deniedIndex)
 						region.scripts[event] = callback
 					elseif method == "SetText" then
 						region.text = ...
+					elseif method == "SetSize" then
+						region.width, region.height = ...
+					elseif method == "HighlightText" then
+						region.selected = true
 					end
 				end
 			end,
@@ -170,4 +174,28 @@ Test("window callbacks operate on safe detached regions", function()
 		end
 	end
 	assert(s.writes > before)
+end)
+
+Test("feedback window copies only the selected URL and reuses its own compact frame", function()
+	local s, owner = Fixture(), {}
+	s.policy.copyLink = true
+	s.policy.title = "Fixture Feedback"
+	local first = "https://www.curseforge.com/wow/addons/fixture"
+	local second = "https://github.com/owner/fixture"
+	assert(T.OpenReportWindow(owner, first, s.policy))
+	local frame = owner.diagnosticsWindow
+	Equal(frame.width, 620)
+	Equal(frame.height, 200)
+	Equal(frame.TextBox.text, first)
+	Equal(frame.TextBox.selected, true)
+	Equal(s.regions[9].text, "Select Link")
+	assert(T.OpenReportWindow(owner, second, s.policy))
+	Equal(owner.diagnosticsWindow, frame)
+	Equal(frame.TextBox.text, second)
+	Equal(#s.regions, 9)
+	s.restricted = true
+	local writes = s.writes
+	Equal(T.OpenReportWindow(owner, first, s.policy), false)
+	Equal(s.writes, writes)
+	Equal(frame.TextBox.text, second)
 end)

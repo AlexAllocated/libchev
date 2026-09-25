@@ -2,7 +2,7 @@
 -- Private embedding: every addon receives its own library through its loader
 -- namespace. No global registry, Blizzard mutation, hooks, events or saved data.
 local _, namespace = ...
-local LibChev = { VERSION = "1.1.3", API_VERSION = 1 }
+local LibChev = { VERSION = "1.2.0", API_VERSION = 1 }
 local unpackValues = unpack or table.unpack
 local secret = type(issecretvalue) == "function" and issecretvalue or nil
 local accessible = type(canaccessvalue) == "function" and canaccessvalue or nil
@@ -420,6 +420,81 @@ end
 
 function LibChev.TestSummary(result)
 	return string.format("Test summary: %d passed, %d failed (%d total).", result.passed, result.failed, result.total)
+end
+
+-- The consumer owns all configuration, link registration and UI policies.
+-- Only a primitive link string crosses into this controller from the client.
+function LibChev.NewWelcomeController(policy)
+	local controller = {}
+	local destinations = {
+		{ key = "curseforge", label = "CurseForge", url = policy.curseforgeURL },
+		{ key = "github", label = "GitHub", url = policy.githubURL },
+	}
+	local function PlainText(value, fallback)
+		return (LibChev.Text(value, fallback):gsub("|", "||"))
+	end
+	function controller:HandleLink(link)
+		if not LibChev.CanAccess(link) or type(link) ~= "string" then
+			return false
+		end
+		for _, destination in ipairs(destinations) do
+			if link == policy.linkType .. ":" .. destination.key then
+				local ui = policy.ui
+				local ok, shown = pcall(LibChev.OpenReportWindow, self, destination.url, {
+					parent = ui.parent,
+					createFrame = ui.createFrame,
+					restricted = ui.restricted,
+					canMutate = ui.canMutate,
+					title = policy.addonName .. " Feedback",
+					copyLink = true,
+				})
+				if not ok or shown ~= true then
+					pcall(policy.print, "Feedback: " .. destination.url)
+				end
+				return true
+			end
+		end
+		return false
+	end
+	function controller:Announce()
+		if self.announced then
+			return false
+		end
+		if not self.linksRegistered then
+			local ok, registered = pcall(policy.registerLink, policy.linkType, function(link)
+				self:HandleLink(link)
+				-- The public link dispatcher treats nil as handled. No foreign
+				-- linkData/context tables or global response constants are needed.
+			end)
+			self.linksRegistered = ok and registered == true
+		end
+		local labels = {}
+		for index, destination in ipairs(destinations) do
+			labels[index] = self.linksRegistered
+					and ("|cff71d5ff|H" .. policy.linkType .. ":" .. destination.key .. "|h[" .. destination.label .. "]|h|r")
+				or (destination.label .. " (" .. destination.url .. ")")
+		end
+		local ok, version = pcall(policy.getVersion)
+		version = ok and PlainText(version, "unknown") or "unknown"
+		if version == "" then
+			version = "unknown"
+		end
+		local message = "v"
+			.. version
+			.. " loaded! Now supports "
+			.. policy.clients
+			.. ". Type "
+			.. policy.command
+			.. " for settings. If you run into any issues, please leave feedback on "
+			.. labels[1]
+			.. " or "
+			.. labels[2]
+			.. "."
+		local printed = pcall(policy.print, message)
+		self.announced = printed
+		return printed
+	end
+	return controller
 end
 
 if type(namespace) == "table" then
