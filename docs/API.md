@@ -37,7 +37,7 @@ The owned policy contains:
 
 Adapters are trusted, synchronous policy functions: they must not throw or mutate the work store during a query. The library does not guess engine safety or retry indefinitely.
 
-`ScheduleWork(policy, class, key, callback, delay, reason)` replaces prior work for the same key. A callback runs only while both the original store and original entry remain current, enabled, and unblocked. Blocked work parks until the consumer flushes it. Completed entries remove generation bookkeeping.
+`ScheduleWork(policy, class, key, callback, delay, reason)` replaces prior work for the same key. A callback runs only while both the original store and original entry remain current, enabled, and unblocked. The injected timer marks delayed work due only when its callback fires. Due work that is blocked or disabled parks until the consumer flushes it. A flush before that timer fires leaves the original timer and entry untouched. Completed entries remove generation bookkeeping.
 
 `RunOrDeferWork(...)` invokes immediately when allowed, otherwise parks work and returns false. An immediate invocation supersedes pending work for that key. `FlushWork(policy, reason)` snapshots pending entries, skips replaced/consumed entries, and stops if the store or enabled state changes. Queue capacity and flush triggers belong to consumers; this is not an unbounded input ingestion API.
 

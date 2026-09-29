@@ -62,6 +62,29 @@ function T.SelfTests()
 		assert(T.WorkKey("a::b", "c") ~= T.WorkKey("a", "b::c"))
 		assert(T.WorkKey("a", 1) ~= T.WorkKey("a", "1"))
 	end)
+	Test("restriction flush preserves a pending delay and wakes due work", function()
+		local state, timers, blocked, calls = T.NewWorkState(), {}, true, 0
+		local policy = {
+			getState = function() return state end,
+			enabled = function() return true end,
+			blocked = function() return blocked end,
+			delay = function(_, callback) timers[#timers + 1] = callback end,
+			invoke = function(_, _, _, callback) callback() end,
+		}
+		T.ScheduleWork(policy, "fixture", "pending", function() calls = calls + 1 end, 1)
+		blocked = false
+		T.FlushWork(policy)
+		Equal(calls, 0)
+		Equal(#timers, 1)
+		blocked = true
+		timers[1]()
+		Equal(calls, 0)
+		blocked = false
+		T.FlushWork(policy)
+		timers[1]()
+		Equal(calls, 1)
+		Equal(next(state.entries), nil)
+	end)
 	Test("report bounds", function()
 		local report = T.NewReport(32)
 		report:Add("detail", string.rep("x", 100))

@@ -2,7 +2,7 @@
 -- Private embedding: every addon receives its own library through its loader
 -- namespace. No global registry, Blizzard mutation, hooks, events or saved data.
 local _, namespace = ...
-local LibChev = { VERSION = "1.2.0", API_VERSION = 1 }
+local LibChev = { VERSION = "1.2.1", API_VERSION = 1 }
 local unpackValues = unpack or table.unpack
 local secret = type(issecretvalue) == "function" and issecretvalue or nil
 local accessible = type(canaccessvalue) == "function" and canaccessvalue or nil
@@ -310,12 +310,16 @@ function LibChev.ScheduleWork(policy, workClass, key, callback, delay, reason)
 		delaySeconds = delay,
 		reason = reason,
 		generation = generation,
+		delayElapsed = false,
 	}
 	state.entries[workKey] = entry
 	local function run()
 		if policy.getState() ~= state or state.entries[workKey] ~= entry then
 			return
 		end
+		-- Only the injected timer can make delayed work due. Restriction-release
+		-- flushes must not consume a still-pending debounce/settling timer.
+		entry.delayElapsed = true
 		if not policy.enabled() or policy.blocked(workClass) then
 			return
 		end
@@ -359,7 +363,7 @@ function LibChev.FlushWork(policy, reason)
 			break
 		end
 		local key, entry = pair[1], pair[2]
-		if state.entries[key] == entry then
+		if state.entries[key] == entry and entry.delayElapsed then
 			LibChev.ScheduleWork(policy, entry.workClass, entry.key, entry.callback, 0, reason or entry.reason)
 		end
 	end

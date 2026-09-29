@@ -15,6 +15,20 @@ These checks are offline evidence. They do not prove Retail or Classic/Forever b
 
 An addon integration branch or pull request is not an addon release. Consumer version tags and deployment require their own authorization and validation.
 
+## 1.2.1 deferred-work correction
+
+Restriction-release flushes leave not-yet-due timers in place. Only a scheduled
+timer callback marks its entry due; if blocked or disabled then, the entry parks
+for a later flush. Replacement and state-reset checks still invalidate stale
+callbacks. No clock API, polling timer, or retry loop is added.
+
+Regression checks cover early flushes, due blocked/disabled work, replacement
+after a parked timer, independent deadlines, default delays and the existing
+immediate fallback when no scheduler is supplied. A detached self-test also
+exercises this contract in consumer test suites. QuestTogether additionally
+checks the quest-tooltip settling delay across a combat-end event. These checks
+do not establish live-client taint safety.
+
 ## 1.1.1 console correction
 
 User-reported Forever 1.60.1 build 70009/interface 16001 results for consumers of 1.1.0: QuestTogether 324/324 passed; PvPTogether 15/15 passed; NoPoizen 122/123 passed, with `CoreTests.lua:138` raising division by zero while constructing a NaN test fixture. Consumer fixes remove undefined arithmetic from client-loaded fixtures while retaining NaN rejection coverage offline. PvPTogether supplies the optional clock adapter for shared timestamp formatting.
