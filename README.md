@@ -11,7 +11,7 @@ libchev provides bounded structured logs, capped counters, diagnostic reports an
 From a libchev checkout:
 
 ```sh
-python3 scripts/vendor.py /path/to/YourAddon --ref v1.2.2
+python3 scripts/vendor.py /path/to/YourAddon --ref v1.2.3
 python3 scripts/vendor.py /path/to/YourAddon --check
 ```
 
@@ -37,13 +37,15 @@ local log = LibChev.NewLog()
 LibChev.AppendLog(log, "Addon initialized", "CORE")
 ```
 
-The core exports `VERSION = "1.2.2"` and `API_VERSION = 1`. Optional modules extend only that same private object. Never load the library via a separate addon or publish the object in a global registry. Different embedded versions may coexist in either addon load order.
+The core exports `VERSION = "1.2.3"` and `API_VERSION = 1`. Optional modules extend only that same private object. Never load the library via a separate addon or publish the object in a global registry. Different embedded versions may coexist in either addon load order.
 
 ## One debug interface across addons
 
 `NewDebugController` owns the shared log/search/category model, test execution and results, diagnostic exports, command dispatch, and one console implementation. Every addon gets the same draggable, resizable UI with copy, clear, reload, run tests, diagnostics, category selection, fuzzy/quoted search, and scroll-to-latest behavior. Adapters supply owned stores/settings, isolated tests, domain diagnostics, and restriction policies. The library never chooses quest, nameplate, or poison behavior.
 
 Call `controller:HandleCommand(command, ...)` for debug commands and `controller:Append(text, category)` for events. Programmatic `RunTests(reverse)` remains headless; user commands and the Run Tests button explicitly present results. See the [shared debug contract](docs/DEBUG_CONTRACT.md) for every adapter field and method.
+
+Shared user-facing strings can use the consumer's optional `policy.translate(text)` callback. English remains the fallback, and internal category/diagnostic keys and raw logs stay unchanged. See the [localization contract and source catalog](docs/LOCALIZATION.md).
 
 ## Ownership and safety
 

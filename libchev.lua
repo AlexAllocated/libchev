@@ -2,7 +2,7 @@
 -- Private embedding: every addon receives its own library through its loader
 -- namespace. No global registry, Blizzard mutation, hooks, events or saved data.
 local _, namespace = ...
-local LibChev = { VERSION = "1.2.2", API_VERSION = 1 }
+local LibChev = { VERSION = "1.2.3", API_VERSION = 1 }
 local unpackValues = unpack or table.unpack
 local secret = type(issecretvalue) == "function" and issecretvalue or nil
 local accessible = type(canaccessvalue) == "function" and canaccessvalue or nil
@@ -41,6 +41,43 @@ function LibChev.Text(value, fallback)
 		return fallback or "nil"
 	end
 	return fallback or ("<" .. kind .. ">")
+end
+
+-- Translation policies and source keys belong to the embedding addon. The
+-- callback receives one plain string; failed/foreign responses retain English.
+function LibChev.Translate(policy, text)
+	if not LibChev.CanAccess(text) or type(text) ~= "string" then
+		return ""
+	end
+	local translate = policy and policy.translate
+	if LibChev.CanAccess(translate) and type(translate) == "function" then
+		local ok, translated = pcall(translate, text)
+		if ok and LibChev.CanAccess(translated) and type(translated) == "string" then
+			return translated
+		end
+	end
+	return text
+end
+
+function LibChev.TranslateFormat(policy, format, ...)
+	local count, arguments = select("#", ...), {}
+	for index = 1, count do
+		local value = select(index, ...)
+		if not LibChev.CanAccess(value) then
+			value = "<inaccessible>"
+		elseif type(value) ~= "string" and type(value) ~= "number" then
+			value = LibChev.Text(value, "<inaccessible>")
+		end
+		arguments[index] = value
+	end
+	local translated = LibChev.Translate(policy, format)
+	local ok, text = pcall(string.format, translated, unpackValues(arguments, 1, count))
+	if ok then
+		return text
+	end
+	local fallback = LibChev.Text(format, "")
+	ok, text = pcall(string.format, fallback, unpackValues(arguments, 1, count))
+	return ok and text or fallback
 end
 
 function LibChev.Number(value)
@@ -422,8 +459,14 @@ function LibChev.RunTests(cases, options)
 	return result
 end
 
-function LibChev.TestSummary(result)
-	return string.format("Test summary: %d passed, %d failed (%d total).", result.passed, result.failed, result.total)
+function LibChev.TestSummary(result, policy)
+	return LibChev.TranslateFormat(
+		policy,
+		"Test summary: %d passed, %d failed (%d total).",
+		result.passed,
+		result.failed,
+		result.total
+	)
 end
 
 -- The consumer owns all configuration, link registration and UI policies.
@@ -449,11 +492,12 @@ function LibChev.NewWelcomeController(policy)
 					createFrame = ui.createFrame,
 					restricted = ui.restricted,
 					canMutate = ui.canMutate,
-					title = policy.addonName .. " Feedback",
+					title = LibChev.TranslateFormat(policy, "%s Feedback", policy.addonName),
+					translate = policy.translate,
 					copyLink = true,
 				})
 				if not ok or shown ~= true then
-					pcall(policy.print, "Feedback: " .. destination.url)
+					pcall(policy.print, LibChev.TranslateFormat(policy, "Feedback: %s", destination.url))
 				end
 				return true
 			end
@@ -479,21 +523,20 @@ function LibChev.NewWelcomeController(policy)
 				or (destination.label .. " (" .. destination.url .. ")")
 		end
 		local ok, version = pcall(policy.getVersion)
-		version = ok and PlainText(version, "unknown") or "unknown"
+		version = ok and PlainText(version, LibChev.Translate(policy, "unknown"))
+			or LibChev.Translate(policy, "unknown")
 		if version == "" then
-			version = "unknown"
+			version = LibChev.Translate(policy, "unknown")
 		end
-		local message = "v"
-			.. version
-			.. " loaded! Now supports "
-			.. policy.clients
-			.. ". Type "
-			.. policy.command
-			.. " for settings. If you run into any issues, please leave feedback on "
-			.. labels[1]
-			.. " or "
-			.. labels[2]
-			.. "."
+		local message = LibChev.TranslateFormat(
+			policy,
+			"v%s loaded! Now supports %s. Type %s for settings. If you run into any issues, please leave feedback on %s or %s.",
+			version,
+			policy.clients,
+			policy.command,
+			labels[1],
+			labels[2]
+		)
 		local printed = pcall(policy.print, message)
 		self.announced = printed
 		return printed

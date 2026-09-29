@@ -4,7 +4,7 @@ local LibChev = assert(namespace.LibChev, "Load libchev.lua first")
 
 -- UI policy is injected by the owning addon. This module has no frame access
 -- until explicitly opened, and stores references only on frames it creates.
--- policy: restricted(), canMutate(frame), createFrame(...), parent, title.
+-- policy: restricted(), canMutate(frame), createFrame(...), parent, title, optional translate(text).
 function LibChev.OpenReportWindow(owner, text, policy)
 	local function Allowed()
 		local ok, restricted = pcall(policy.restricted)
@@ -59,15 +59,18 @@ function LibChev.OpenReportWindow(owner, text, policy)
 			return false
 		end
 		title:SetPoint("TOPLEFT", 20, -18)
-		title:SetText(LibChev.Text(policy.title))
+		title:SetText(LibChev.Translate(policy, LibChev.Text(policy.title)))
 		local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		if not CanMutate(hint) then
 			return false
 		end
 		hint:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -10)
 		hint:SetText(
-			copyLink and "Press Ctrl+C to copy this address, then open it in your browser."
-				or "Report selected: press Ctrl+C to copy. Use the mouse wheel to scroll."
+			LibChev.Translate(
+				policy,
+				copyLink and "Press Ctrl+C to copy this address, then open it in your browser."
+					or "Report selected: press Ctrl+C to copy. Use the mouse wheel to scroll."
+			)
 		)
 		local scroll = policy.createFrame("ScrollFrame", nil, frame)
 		if not CanMutate(scroll) then
@@ -133,7 +136,7 @@ function LibChev.OpenReportWindow(owner, text, policy)
 		end
 		close:SetSize(100, 24)
 		close:SetPoint("BOTTOMRIGHT", -20, 16)
-		close:SetText("Close")
+		close:SetText(LibChev.Translate(policy, "Close"))
 		close:SetScript("OnClick", Close)
 		local selectAll = policy.createFrame("Button", nil, frame, "UIPanelButtonTemplate")
 		if not CanMutate(selectAll) then
@@ -141,7 +144,7 @@ function LibChev.OpenReportWindow(owner, text, policy)
 		end
 		selectAll:SetSize(120, 24)
 		selectAll:SetPoint("BOTTOMLEFT", 20, 16)
-		selectAll:SetText(copyLink and "Select Link" or "Select Report")
+		selectAll:SetText(LibChev.Translate(policy, copyLink and "Select Link" or "Select Report"))
 		selectAll:SetScript("OnClick", function()
 			if CanMutate(box) then
 				box:SetFocus()

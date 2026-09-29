@@ -56,3 +56,7 @@ A restriction answer must be exactly false, and mutation permission exactly true
 ## Shared debug console
 
 Version 1.1.0 adds `NewDebugController` and one guarded console view used by all three consumers. See [the complete controller contract](DEBUG_CONTRACT.md). The older `OpenReportWindow` remains available for standalone bounded copy windows; it is no longer the addon debug console. Shared tests include three extra controller checks when `Debug.lua` is loaded (13 pure checks total).
+
+## Optional localization
+
+Version 1.2.3 accepts an optional plain `policy.translate(text)` on debug, report and welcome controllers. Missing, throwing, inaccessible or non-string translations fall back to the original English. `Translate(policy, text)` and `TranslateFormat(policy, format, ...)` are available for consumers; `TestSummary(result, policy)` also accepts this policy. Internal categories, protocols, diagnostic keys and raw logs are unchanged. See [the callback contract and complete English catalog](LOCALIZATION.md).

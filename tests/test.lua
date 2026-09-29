@@ -58,7 +58,7 @@ Test("private copies in either load order cannot replace each other", function()
 		Equal(second.LibChev, b)
 		assert(a ~= b)
 		a.VERSION, a.AppendLog = "older-fixture", nil
-		Equal(b.VERSION, "1.2.2")
+		Equal(b.VERSION, "1.2.3")
 		Equal(type(b.AppendLog), "function")
 	end
 end)
@@ -273,7 +273,9 @@ end)
 Test("early flush preserves delayed work and its original timer", function()
 	local p, o = Policy()
 	local calls = 0
-	T.ScheduleWork(p, "class", "key", function() calls = calls + 1 end, 1)
+	T.ScheduleWork(p, "class", "key", function()
+		calls = calls + 1
+	end, 1)
 	local key, original = next(o.state.entries)
 	for _ = 1, 3 do
 		T.FlushWork(p, "early restriction release")
@@ -292,7 +294,9 @@ Test("due delayed work parks and flushes without restarting its delay", function
 		local p, o = Policy()
 		o.blocked, o.active = boundary == "blocked", boundary ~= "disabled"
 		local calls = 0
-		T.ScheduleWork(p, "class", "key", function() calls = calls + 1 end, 1)
+		T.ScheduleWork(p, "class", "key", function()
+			calls = calls + 1
+		end, 1)
 		T.FlushWork(p)
 		o.timers[1]()
 		Equal(calls, 0)
@@ -311,9 +315,13 @@ Test("replacement resets delay readiness and stale timers cannot make it due", f
 	local p, o = Policy()
 	o.blocked = true
 	local calls = 0
-	T.ScheduleWork(p, "class", "key", function() error("superseded") end, 1)
+	T.ScheduleWork(p, "class", "key", function()
+		error("superseded")
+	end, 1)
 	o.timers[1]()
-	T.ScheduleWork(p, "class", "key", function() calls = calls + 1 end, 1)
+	T.ScheduleWork(p, "class", "key", function()
+		calls = calls + 1
+	end, 1)
 	o.blocked = false
 	o.timers[1]()
 	T.FlushWork(p)
@@ -326,8 +334,12 @@ Test("flush wakes due work without pulling independent delayed work forward", fu
 	local p, o = Policy()
 	local due, future = 0, 0
 	o.blocked = true
-	T.ScheduleWork(p, "class", "due", function() due = due + 1 end, 1)
-	T.ScheduleWork(p, "class", "future", function() future = future + 1 end, 2)
+	T.ScheduleWork(p, "class", "due", function()
+		due = due + 1
+	end, 1)
+	T.ScheduleWork(p, "class", "future", function()
+		future = future + 1
+	end, 2)
 	o.timers[1]()
 	o.blocked = false
 	T.FlushWork(p)
@@ -339,15 +351,21 @@ Test("flush wakes due work without pulling independent delayed work forward", fu
 end)
 Test("default delays retain timer ownership and missing scheduler stays immediate", function()
 	local p, o = Policy()
-	p.defaultDelay = function() return 1 end
+	p.defaultDelay = function()
+		return 1
+	end
 	local calls = 0
-	T.ScheduleWork(p, "class", "key", function() calls = calls + 1 end)
+	T.ScheduleWork(p, "class", "key", function()
+		calls = calls + 1
+	end)
 	T.FlushWork(p)
 	Equal(calls, 0)
 	o.timers[1]()
 	Equal(calls, 1)
 	p.delay = nil
-	T.ScheduleWork(p, "class", "key", function() calls = calls + 1 end, 1)
+	T.ScheduleWork(p, "class", "key", function()
+		calls = calls + 1
+	end, 1)
 	Equal(calls, 2)
 end)
 Test("restricted work parks without timer retry loops", function()
@@ -586,9 +604,76 @@ Test("environment and diagnostic header sanitize client primitives", function()
 	Equal(env.build, "unknown")
 	Equal(env.locale, nil)
 	local text = T.DiagnosticReport("Fixture", "2", env):Text()
-	assert(text:find("library=libchev 1.2.2", 1, true))
+	assert(text:find("library=libchev 1.2.3", 1, true))
 	assert(text:find("client.locale=unknown", 1, true))
 end)
+Test("translation accepts only readable strings and falls back without foreign access", function()
+	local foreign = setmetatable({}, {
+		__index = function()
+			error("foreign read")
+		end,
+		__tostring = function()
+			error("foreign coercion")
+		end,
+		__newindex = function()
+			error("foreign write")
+		end,
+	})
+	local lib = Load({
+		canaccessvalue = function(value)
+			return value ~= "hidden translation"
+		end,
+	})
+	Equal(lib.Translate(nil, "Close"), "Close")
+	Equal(lib.Translate({ translate = foreign }, "Close"), "Close")
+	for _, translate in ipairs({
+		function()
+			return nil
+		end,
+		function()
+			return false
+		end,
+		function()
+			return 7
+		end,
+		function()
+			return foreign
+		end,
+		function()
+			return "hidden translation"
+		end,
+		function()
+			error("translation unavailable")
+		end,
+	}) do
+		Equal(lib.Translate({ translate = translate }, "Close"), "Close")
+	end
+	local policy = {
+		translate = function(text)
+			Equal(text, "Close")
+			return "Fermer"
+		end,
+	}
+	Equal(lib.Translate(policy, "Close"), "Fermer")
+	Equal(
+		lib.TranslateFormat({
+			translate = function()
+				return "broken %d"
+			end,
+		}, "Value: %s", "label"),
+		"Value: label"
+	)
+	Equal(lib.TranslateFormat({}, "%s", foreign), "<inaccessible>")
+	Equal(lib.TranslateFormat({}, "%s", "hidden translation"), "<inaccessible>")
+	local isolated = Load(setmetatable({}, {
+		__index = _G,
+		__newindex = function()
+			error("global write")
+		end,
+	}))
+	Equal(isolated.Translate(policy, "Close"), "Fermer")
+end)
+
 assert(loadfile(root .. "/tests/test_window.lua"))(Test, Equal, Load)
 assert(loadfile(root .. "/tests/test_welcome.lua"))(Test, Equal, Load)
 assert(loadfile(root .. "/tests/test_debug.lua"))(Test, Equal, Load)

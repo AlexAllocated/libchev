@@ -54,7 +54,10 @@ local function SetScroll(controller, state, value, fromUser)
 			controller,
 			state.footer,
 			"SetText",
-			controller.tailPinned and "Following newest events" or "Scroll to the bottom to follow new events"
+			LibChev.Translate(
+				controller.policy,
+				controller.tailPinned and "Following newest events" or "Scroll to the bottom to follow new events"
+			)
 		)
 	end
 	return true
@@ -121,7 +124,7 @@ local function Create(controller)
 		ButtonArt(button, "SetHighlightTexture", "DialogButtonHighlightTexture")
 		local text = Label(button, "GameFontNormalSmall")
 		Call(controller, text, "SetPoint", "CENTER")
-		Call(controller, text, "SetText", label)
+		Call(controller, text, "SetText", LibChev.Translate(controller.policy, label))
 		button.Label = text
 		return button
 	end
@@ -211,11 +214,11 @@ local function Create(controller)
 		end
 		state.buttons[definition[1]], previous = button, button
 	end
-	state.category = Button(frame, "Category: ALL", 184)
+	state.category = Button(frame, "", 184)
 	Call(controller, state.category, "SetPoint", "TOPLEFT", 14, -77)
 	state.searchLabel = Label(frame)
 	Call(controller, state.searchLabel, "SetPoint", "LEFT", state.category, "RIGHT", 12, 0)
-	Call(controller, state.searchLabel, "SetText", "Search:")
+	Call(controller, state.searchLabel, "SetText", LibChev.Translate(controller.policy, "Search:"))
 	state.search = New("EditBox", frame)
 	Background(state.search, 0.13)
 	Call(controller, state.search, "SetPoint", "TOPLEFT", frame, "TOPLEFT", 265, -77)
@@ -231,7 +234,10 @@ local function Create(controller)
 		controller,
 		state.hint,
 		"SetText",
-		'Search is fuzzy; use "quotes" for an exact phrase. Select All, then Ctrl+C to copy.'
+		LibChev.Translate(
+			controller.policy,
+			'Search is fuzzy; use "quotes" for an exact phrase. Select All, then Ctrl+C to copy.'
+		)
 	)
 	state.scroll = New("ScrollFrame", frame)
 	Call(controller, state.scroll, "SetPoint", "TOPLEFT", 14, -135)
@@ -467,10 +473,21 @@ local function Refresh(controller, state)
 	local category, search = controller:GetCategory(), controller:GetSearch()
 	local text = report and controller.reportText or controller:GetText(category, search)
 	text = LibChev.Text(text, "")
-	local title = LibChev.Text(report and controller.reportTitle or controller.title, "Debug")
+	local title = LibChev.Text(
+		report and controller.reportTitle or controller.title,
+		LibChev.Translate(controller.policy, "Debug")
+	)
 	if not report then
 		local shown, chars, total = controller:GetMetrics(category, search)
-		title = title .. string.format(" [%s] (%d/%d lines, %d chars)", LibChev.Text(category), shown, total, chars)
+		title = title
+			.. LibChev.TranslateFormat(
+				controller.policy,
+				" [%s] (%d/%d lines, %d chars)",
+				LibChev.Text(category),
+				shown,
+				total,
+				chars
+			)
 	end
 	Call(controller, state.title, "SetText", title)
 	Call(controller, state.buttons.reload, "SetShown", type(controller.policy.reload) == "function")
@@ -478,13 +495,21 @@ local function Refresh(controller, state)
 	Call(controller, state.category, "SetShown", not report)
 	Call(controller, state.search, "SetShown", not report)
 	Call(controller, state.searchLabel, "SetShown", not report)
-	Call(controller, state.category.Label, "SetText", "Category: " .. LibChev.Text(category) .. " v")
+	Call(
+		controller,
+		state.category.Label,
+		"SetText",
+		LibChev.TranslateFormat(controller.policy, "Category: %s v", LibChev.Text(category))
+	)
 	Call(
 		controller,
 		state.hint,
 		"SetText",
-		report and "Select All, then Ctrl+C to copy this report. Log returns to event history."
-			or 'Search is fuzzy; use "quotes" for an exact phrase. Scroll categories with the mouse wheel.'
+		LibChev.Translate(
+			controller.policy,
+			report and "Select All, then Ctrl+C to copy this report. Log returns to event history."
+				or 'Search is fuzzy; use "quotes" for an exact phrase. Scroll categories with the mouse wheel.'
+		)
 	)
 	if report then
 		Call(controller, state.popup, "Hide")
@@ -526,7 +551,10 @@ local function Refresh(controller, state)
 		controller,
 		state.footer,
 		"SetText",
-		report and "Report" or (tail and "Following newest events" or "Scroll to the bottom to follow new events")
+		LibChev.Translate(
+			controller.policy,
+			report and "Report" or (tail and "Following newest events" or "Scroll to the bottom to follow new events")
+		)
 	)
 	state.refreshing = false
 	return true

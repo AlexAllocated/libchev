@@ -58,12 +58,18 @@ end
 
 function L.NewDebugController(policy)
 	policy = policy or {}
+	local title
+	if L.CanAccess(policy.title) and type(policy.title) == "string" then
+		title = L.Translate(policy, policy.title)
+	else
+		title = L.TranslateFormat(policy, "%s Debug", Text(policy.addonName, L.Translate(policy, "Addon")))
+	end
 	return setmetatable({
 		policy = policy,
 		log = L.NewLog(),
 		category = "ALL",
 		search = "",
-		title = Text(policy.title, Text(policy.addonName, "Addon") .. " Debug"),
+		title = title,
 		mode = "log",
 		tailPinned = true,
 		forceTail = false,
@@ -268,7 +274,7 @@ function Controller:Print(text)
 	end
 end
 function Controller:Fallback(text)
-	self:Print("Debug console unavailable; results follow in chat.")
+	self:Print(L.Translate(self.policy, "Debug console unavailable; results follow in chat."))
 	for line in Text(text):gmatch("[^\n]+") do
 		self:Print(line)
 	end
@@ -287,7 +293,14 @@ function Controller:ShowLog()
 end
 function Controller:ShowReport(text, title)
 	self.mode, self.reportText, self.reportTitle =
-		"report", Text(text):sub(1, 200000), (Text(self.policy.addonName, "Addon") .. " " .. Text(title, "Diagnostics"))
+		"report",
+		Text(text):sub(1, 200000),
+		L.TranslateFormat(
+			self.policy,
+			"%s %s",
+			Text(self.policy.addonName, L.Translate(self.policy, "Addon")),
+			L.Translate(self.policy, Text(title, "Diagnostics"))
+		)
 	self.forceTail = false
 	return self:Open()
 end
@@ -321,7 +334,7 @@ function Controller:GetRecentText(maxChars)
 	if chars <= maxChars then
 		return table.concat(lines, "\n")
 	end
-	local marker = "[older events omitted]\n"
+	local marker = L.Translate(self.policy, "[older events omitted]") .. "\n"
 	if maxChars <= #marker then
 		marker = "[...]\n"
 	end
@@ -346,15 +359,15 @@ function Controller:BuildDiagnosticExport(...)
 	local ok, report = pcall(self.policy.buildReport, ...)
 	if not ok then
 		report = self:Header()
-		report:Add("diagnostics", "Report unavailable")
+		report:Add("diagnostics", L.Translate(self.policy, "Report unavailable"))
 		report = report:Text()
 	end
 	report = Text(report)
-	local marker = "\n[diagnostics truncated]"
+	local marker = "\n" .. L.Translate(self.policy, "[diagnostics truncated]")
 	if #report > 24576 then
 		report = report:sub(1, 24576 - #marker) .. marker
 	end
-	local heading = "\n\nRecent events:\n"
+	local heading = "\n\n" .. L.Translate(self.policy, "Recent events:") .. "\n"
 	return report .. heading .. self:GetRecentText(32768 - #report - #heading)
 end
 function Controller:ShowDiagnostics(...)
@@ -427,8 +440,18 @@ function Controller:RunTests(reverse, present)
 	end
 	self.runningTests = false
 	local report = self:Header()
-	report:Add("suite", Text(self.policy.addonName, "Addon") .. " in-game tests")
-	report:Add("purpose", "Addon-owned isolated checks; live-client behavior requires separate validation.")
+	report:Add(
+		"suite",
+		L.TranslateFormat(
+			self.policy,
+			"%s in-game tests",
+			Text(self.policy.addonName, L.Translate(self.policy, "Addon"))
+		)
+	)
+	report:Add(
+		"purpose",
+		L.Translate(self.policy, "Addon-owned isolated checks; live-client behavior requires separate validation.")
+	)
 	for index, failure in ipairs(result.failures) do
 		report:Add("failure." .. index, "[FAIL] " .. Text(failure.name))
 		if self.policy.failureDetails == true then
@@ -443,13 +466,13 @@ function Controller:RunTests(reverse, present)
 					self:Append(line, "TEST")
 				end
 				-- Preserve the final summary after bounded history eviction.
-				self:Append(L.TestSummary(result), "TEST")
+				self:Append(L.TestSummary(result, self.policy), "TEST")
 				self:SaveFilters(keepAll and "ALL" or "TEST", "")
 			end)
 			self:ShowLog()
 		end)
 		if not presented then
-			self:Fallback(report:Text() .. "\n" .. L.TestSummary(result))
+			self:Fallback(report:Text() .. "\n" .. L.TestSummary(result, self.policy))
 		end
 	else
 		for _, failure in ipairs(result.failures) do
@@ -459,7 +482,7 @@ function Controller:RunTests(reverse, present)
 			end
 			self:Print(line)
 		end
-		self:Print(L.TestSummary(result))
+		self:Print(L.TestSummary(result, self.policy))
 	end
 	return result.failed == 0, result.passed, result.failed, result
 end

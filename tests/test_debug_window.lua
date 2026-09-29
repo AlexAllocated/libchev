@@ -550,3 +550,61 @@ Test("debug gesture release survives restrictions and hidden windows", function(
 		end
 	end
 end)
+
+Test("translated debug labels preserve category keys controls and raw log text", function()
+	local s, fixture = Fixture()
+	local translations = {
+		["%s Debug"] = "%s Depuracion",
+		["Select All"] = "Seleccionar todo",
+		["Clear"] = "Borrar",
+		["Reload UI"] = "Recargar",
+		["Run Tests"] = "Probar",
+		["Diagnostics"] = "Diagnosticos",
+		["Log"] = "Registro",
+		["Search:"] = "Buscar:",
+		["Category: %s v"] = "Categoria: %s v",
+		[" [%s] (%d/%d lines, %d chars)"] = " [%s] (%d/%d lineas, %d caracteres)",
+		["Following newest events"] = "Siguiendo eventos",
+		["Select All, then Ctrl+C to copy this report. Log returns to event history."] = "Copiar informe; volver al registro.",
+	}
+	fixture.policy.addonName = "Fixture"
+	fixture.policy.translate = function(text)
+		return translations[text] or text
+	end
+	fixture.policy.buildReport = function()
+		return "machine.key=raw value"
+	end
+	local c = T.NewDebugController(fixture.policy)
+	c:Append("original raw log", "QUEST")
+	assert(c:ShowLog())
+	local frame, state = c.window, c._debugWindowState
+	Equal(frame.Buttons.select.Label.text, "Seleccionar todo")
+	Equal(frame.Buttons.clear.Label.text, "Borrar")
+	Equal(frame.Buttons.reload.Label.text, "Recargar")
+	Equal(frame.Buttons.tests.Label.text, "Probar")
+	Equal(frame.Buttons.diagnostics.Label.text, "Diagnosticos")
+	Equal(frame.Buttons.log.Label.text, "Registro")
+	Equal(state.searchLabel.text, "Buscar:")
+	Equal(state.category.Label.text, "Categoria: ALL v")
+	Equal(state.footer.text, "Siguiendo eventos")
+	assert(state.title.text:find("Fixture Depuracion", 1, true))
+	assert(state.title.text:find("lineas", 1, true))
+	assert(frame.TextBox.text:find("[QUEST] original raw log", 1, true))
+	Click(frame.Category)
+	Equal(state.rows[2].category, "QUEST")
+	Click(state.rows[2])
+	Equal(c:GetCategory(), "QUEST")
+	Click(frame.Buttons.select)
+	assert(frame.TextBox.selected)
+	Click(frame.Buttons.diagnostics)
+	Equal(c.mode, "report")
+	Equal(state.hint.text, "Copiar informe; volver al registro.")
+	Equal(c.reportTitle, "Fixture Diagnosticos")
+	assert(frame.TextBox.text:find("machine.key=raw value", 1, true))
+	Click(frame.Buttons.log)
+	Equal(c.mode, "log")
+	Click(frame.Buttons.clear)
+	Equal(#c:GetEntries(), 0)
+	Equal(c:GetCategory(), "ALL")
+	Equal(s.deniedAttempts, 0)
+end)

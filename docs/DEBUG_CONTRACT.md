@@ -29,3 +29,7 @@ Window/controller fields used by the shared view are owned: `window`, `mode` (lo
 `LibChev.FormatSafe(format,...)` and `LibChev.StateText(label,value)` expose the same safe primitive formatting for compatibility adapters; no foreign object coercion. Internal batches restore their previous depth after a failed policy callback. Presentation failures retain a chat test-summary fallback and never leave the runner locked.
 
 The console uses native WoW texture-only templates for its panel borders and buttons, plus tiled marble/rock artwork. Frames, textures, scripts and state remain privately owned; it does not inherit frame scripts, use shared UI pools, or register global frame names. Presented test runs end with one summary, including when bounded history evicts earlier details.
+
+## Consumer translation
+
+Pass `translate = function(sourceEnglishString) ... end` on the controller policy to localize shared controls, help/status text, report headings and test summaries. It is separate from `ui` and receives no self argument. Invalid translations fall back to English. Category/filter identifiers and raw diagnostic/test content retain their original values; only presentation strings are translated. See [LOCALIZATION.md](LOCALIZATION.md) for the English source keys and formatting rules.

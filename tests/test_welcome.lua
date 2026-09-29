@@ -135,3 +135,32 @@ Test("welcome sanitizes metadata and can retry a failed chat write without dupli
 	Equal(s.registrations, 1)
 	assert(s.messages[1]:find("v1||Hbad||h loaded!", 1, true))
 end)
+
+Test("translated welcome keeps link routing and forwards the translator to feedback UI", function()
+	local lib, s, p = Fixture()
+	p.translate = function(text)
+		if text == "%s Feedback" then
+			return "Avis %s"
+		end
+		if text == "Feedback: %s" then
+			return "Avis: %s"
+		end
+		if text:find("loaded!", 1, true) then
+			return "v%s disponible pour %s. %s : options. Avis sur %s ou %s."
+		end
+		return text
+	end
+	local controller = lib.NewWelcomeController(p)
+	assert(controller:Announce())
+	assert(s.messages[1]:find("v2.3.4 disponible pour Retail, Forever and Classic. /fixture : options.", 1, true))
+	assert(s.messages[1]:find("|Hfixturefeedback:github|h[GitHub]|h", 1, true))
+	lib.OpenReportWindow = function(_, url, policy)
+		Equal(url, p.githubURL)
+		Equal(policy.title, "Avis Fixture")
+		Equal(policy.translate, p.translate)
+		return false
+	end
+	assert(controller:HandleLink("fixturefeedback:github"))
+	Equal(s.messages[#s.messages], "Avis: " .. p.githubURL)
+	Equal(controller:HandleLink("fixturefeedback:Avis"), false)
+end)

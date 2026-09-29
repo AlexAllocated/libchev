@@ -199,3 +199,35 @@ Test("feedback window copies only the selected URL and reuses its own compact fr
 	Equal(s.writes, writes)
 	Equal(frame.TextBox.text, second)
 end)
+
+Test("translated report and link windows preserve selected text and guarded controls", function()
+	for _, copyLink in ipairs({ false, true }) do
+		local s, owner = Fixture(), {}
+		s.policy.copyLink = copyLink
+		s.policy.translate = function(text)
+			return "traduit: " .. text
+		end
+		local report = copyLink and "https://example.invalid/feedback" or "machine.key=original"
+		assert(T.OpenReportWindow(owner, report, s.policy))
+		Equal(s.regions[3].text, "traduit: Fixture")
+		Equal(
+			s.regions[4].text,
+			"traduit: "
+				.. (
+					copyLink and "Press Ctrl+C to copy this address, then open it in your browser."
+					or "Report selected: press Ctrl+C to copy. Use the mouse wheel to scroll."
+				)
+		)
+		Equal(s.regions[8].text, "traduit: Close")
+		Equal(s.regions[9].text, "traduit: " .. (copyLink and "Select Link" or "Select Report"))
+		Equal(owner.diagnosticsWindow.TextBox.text, report)
+		owner.diagnosticsWindow.TextBox.selected = false
+		s.regions[9].scripts.OnClick({})
+		Equal(owner.diagnosticsWindow.TextBox.selected, true)
+		s.restricted = true
+		local writes = s.writes
+		s.regions[8].scripts.OnClick({})
+		s.regions[9].scripts.OnClick({})
+		Equal(s.writes, writes)
+	end
+end)

@@ -210,7 +210,7 @@ Test("shared test commands replace TEST history show results and retain other ca
 	assert(not c:GetText():find("1 passed, 0 failed", 1, true))
 	assert(not c:GetText():find("private detail", 1, true))
 	Equal(#c:GetEntries("STATE", ""), 1)
-	assert(c:GetText():find("library=libchev 1.2.2", 1, true))
+	assert(c:GetText():find("library=libchev 1.2.3", 1, true))
 end)
 Test("shared tests preserve visible ALL view but clear its search", function()
 	local c, L = Fixture()
@@ -472,4 +472,46 @@ Test("shared formatted logging contains invalid formats and foreign objects", fu
 	assert(not c:GetText():find("foreign", 1, true))
 	c:AppendState("STATE", "enabled", true)
 	assert(c:GetText():find("enabled=true", 1, true))
+end)
+
+Test("translated controller summaries and fallback leave diagnostic keys and failures intact", function()
+	local translations = {
+		["Debug console unavailable; results follow in chat."] = "Console indisponible.",
+		["Recent events:"] = "Evenements recents:",
+		["Report unavailable"] = "Rapport indisponible",
+		["Test summary: %d passed, %d failed (%d total)."] = "Tests: %d reussis, %d echecs (%d total).",
+		["%s in-game tests"] = "Tests de %s",
+		["Addon-owned isolated checks; live-client behavior requires separate validation."] = "Verification isolee.",
+	}
+	local c, L, messages = Fixture({
+		translate = function(text)
+			return translations[text] or text
+		end,
+		getTests = function()
+			return { {
+				name = "raw failure name",
+				run = function()
+					error("raw failure detail")
+				end,
+			} }
+		end,
+	})
+	L.OpenDebugWindow = function()
+		return false
+	end
+	c:Append("raw event", "CORE")
+	assert(not c:ShowLog())
+	Equal(messages[1], "Console indisponible.")
+	assert(messages[2]:find("[CORE] raw event", 1, true))
+	local report = c:BuildDiagnosticExport()
+	assert(report:find("diagnostics=Rapport indisponible", 1, true))
+	assert(report:find("Evenements recents:", 1, true))
+	c:RunTests(false, false)
+	Equal(messages[#messages - 1], "[FAIL] raw failure name")
+	Equal(messages[#messages], "Tests: 0 reussis, 1 echecs (1 total).")
+	c:RunTests(false, true)
+	assert(c:GetText():find("suite=Tests de Fixture", 1, true))
+	assert(c:GetText():find("purpose=Verification isolee.", 1, true))
+	assert(c:GetText():find("[FAIL] raw failure name", 1, true))
+	Equal(c:GetCategory(), "TEST")
 end)
