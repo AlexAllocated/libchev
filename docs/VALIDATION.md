@@ -46,3 +46,12 @@ The fix was installed in all three addons through the exact candidate revision `
 Keep the debug console and its controls in one native stacking group. The root is a top-level DIALOG frame with flattened child render layers; its category menu remains inside that group instead of using a global TOOLTIP layer. Raising another window now raises its contents together. All changes apply only to addon-owned frames.
 
 Validation: 89 library checks pass in both orders under Lua 5.1/5.2, and 24 Python vendor checks pass. The stacking regression checks ownership and the root/menu configuration. This is offline validation; interaction with multiple live windows remains a separate client check.
+
+## 1.2.2 debug gesture correction
+
+Drag, resize and hide callbacks retain cancellation intent while consumer policy
+blocks native access. An independently owned wake frame retries cancellation
+when policy permits it, including when the console is hidden. Starting gestures
+remains guarded; cleanup never bypasses the consumer's mutation policy.
+Offline regressions cover drag/resize/hide transitions through restriction and
+protected-frame denial. Live rendering and blocked-action behavior remain client checks.

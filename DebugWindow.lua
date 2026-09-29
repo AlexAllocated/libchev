@@ -390,25 +390,61 @@ local function Create(controller)
 	end
 	Script(close, "OnClick", Close)
 	Script(state.box, "OnEscapePressed", Close)
+	-- Release callbacks must record cancellation even when policy denies native
+	-- access. An independent owned frame can retry after a hidden window recovers.
+	local function FinishGesture()
+		if state.gestureActive then
+			state.gestureStopPending = true
+		end
+		if state.gestureStopPending then
+			local ok = pcall(Call, controller, frame, "StopMovingOrSizing")
+			if not ok then
+				return false
+			end
+			state.gestureActive, state.gestureStopPending = false, false
+		end
+		if state.gestureWake then
+			pcall(Call, controller, state.gestureWake, "Hide")
+		end
+		return true
+	end
+	local function BeginGesture(method, ...)
+		if state.gestureStopPending and not FinishGesture() then
+			return
+		end
+		if not state.gestureWake then
+			local wake = New("Frame", nil)
+			Call(controller, wake, "SetScript", "OnUpdate", function()
+				if state.gestureStopPending or not state.gestureActive then
+					FinishGesture()
+				end
+			end)
+			state.gestureWake = wake
+		end
+		Call(controller, state.gestureWake, "Show")
+		-- Record before invoking native code so an error still leaves cleanup armed.
+		state.gestureActive, state.gestureStopPending = true, true
+		Call(controller, frame, method, ...)
+		state.gestureStopPending = false
+	end
 	Script(drag, "OnDragStart", function()
-		Call(controller, frame, "StartMoving")
+		BeginGesture("StartMoving")
 	end)
-	Script(drag, "OnDragStop", function()
-		Call(controller, frame, "StopMovingOrSizing")
-	end)
+	Call(controller, drag, "SetScript", "OnDragStop", FinishGesture)
 	Script(resize, "OnMouseDown", function(button)
 		if LibChev.CanAccess(button) and button == "LeftButton" then
-			Call(controller, frame, "StartSizing", "BOTTOMRIGHT")
+			BeginGesture("StartSizing", "BOTTOMRIGHT")
 		end
 	end)
-	Script(resize, "OnMouseUp", function()
-		Call(controller, frame, "StopMovingOrSizing")
-	end)
-	Script(frame, "OnHide", function()
-		Call(controller, frame, "StopMovingOrSizing")
+	Call(controller, resize, "SetScript", "OnMouseUp", FinishGesture)
+	local hideCleanup = SafeCallback(controller, frame, function()
 		Call(controller, state.box, "ClearFocus")
 		Call(controller, state.search, "ClearFocus")
 		Call(controller, state.popup, "Hide")
+	end)
+	Call(controller, frame, "SetScript", "OnHide", function()
+		FinishGesture()
+		hideCleanup()
 	end)
 	Script(frame, "OnSizeChanged", function()
 		if not state.refreshing then

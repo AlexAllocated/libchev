@@ -3,7 +3,7 @@ local Test, Equal, Load = ...
 local T = Load()
 
 local function Fixture(deniedIndex)
-	local state = { regions = {}, writes = 0, restricted = false, range = 300, calls = {} }
+	local state = { regions = {}, writes = 0, deniedAttempts = 0, restricted = false, range = 300, calls = {} }
 	local function Region(kind, parent)
 		local region = {
 			kind = kind,
@@ -65,8 +65,12 @@ local function Fixture(deniedIndex)
 					end
 				end
 				return function(_, ...)
-					assert(not region.denied, "mutation of denied child")
-					assert(state.restricted == false, "mutation while restricted")
+					local ok, restricted = pcall(state.controller.policy.ui.restricted)
+					if region.denied or not ok or restricted ~= false then
+						-- Count before throwing: production may contain this failure with pcall.
+						state.deniedAttempts = state.deniedAttempts + 1
+						error("mutation of denied debug fixture region")
+					end
 					state.writes = state.writes + 1
 					if method == "SetToplevel" then
 						region.topLevel = ...
@@ -492,5 +496,57 @@ Test("debug console visibility read fails closed", function()
 		local writes = s.writes
 		Equal(controller:Refresh(), false)
 		Equal(s.writes, writes)
+	end
+end)
+
+Test("debug gesture release survives restrictions and hidden windows", function()
+	for _, gesture in ipairs({ "drag", "resize", "hide" }) do
+		for _, denied in ipairs({ "restricted", "unknown", "throws", "protected" }) do
+			local s, c = Fixture()
+			assert(T.OpenDebugWindow(c))
+			local f = c.window
+			if gesture == "resize" then
+				f.Resize.scripts.OnMouseDown({}, "LeftButton")
+			else
+				f.Drag.scripts.OnDragStart({})
+			end
+			local wake = c._debugWindowState.gestureWake
+			Equal(rawget(wake, "parent"), nil)
+			local originalPolicy = c.policy.ui.restricted
+			if denied == "unknown" then
+				c.policy.ui.restricted = function()
+					return nil
+				end
+			elseif denied == "throws" then
+				c.policy.ui.restricted = function()
+					error("unavailable")
+				end
+			elseif denied == "restricted" then
+				s.restricted = true
+			else
+				f.denied = true
+			end
+			local writes = s.writes
+			if gesture == "resize" then
+				f.Resize.scripts.OnMouseUp({})
+			elseif gesture == "hide" then
+				f.shown = false
+				f.scripts.OnHide({})
+			else
+				f.Drag.scripts.OnDragStop({})
+			end
+			wake.scripts.OnUpdate({})
+			Equal(s.writes, writes)
+			Equal(s.deniedAttempts, 0)
+			assert(c._debugWindowState.gestureStopPending)
+			s.restricted, f.denied = false, false
+			c.policy.ui.restricted = originalPolicy
+			wake.scripts.OnUpdate({})
+			Equal(f.moving, false)
+			Equal(f.sizing, false)
+			Equal(wake.shown, false)
+			Equal(c._debugWindowState.gestureStopPending, false)
+			Equal(s.deniedAttempts, 0)
+		end
 	end
 end)
