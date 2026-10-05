@@ -62,3 +62,7 @@ protected-frame denial. Live rendering and blocked-action behavior remain client
 - Missing, throwing, non-string and inaccessible results retain English; invalid translated format strings retry the English format. Foreign return values are never traversed or stringified.
 - Shared API_VERSION remains 1. Exact revision manifests continue to select the five existing source files; no runtime locale files or global registries are introduced.
 - Live Retail/Forever font coverage, localized text width and rendering remain separate validation; offline fixture success does not prove layout in the client.
+
+## 1.2.4 safe window dismissal
+
+Debug and report/copy windows allow Close/Escape and focus cleanup during known runtime restrictions. Protected/forbidden regions, inaccessible values, unknown restriction states and consumer mutation denials still fail closed. Other buttons, opening, refresh/layout and gesture cancellation retain their existing guards. Offline tests cover safe dismissal and denied regions; live Retail/Forever interaction and taint remain separate validation.

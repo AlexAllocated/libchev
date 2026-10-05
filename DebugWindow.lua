@@ -25,6 +25,13 @@ local function Call(controller, region, method, ...)
 	return region[method](region, ...)
 end
 
+local function Dismiss(controller, region, method)
+	if LibChev.CanDismissOwnedRegion(region, controller.policy.ui) then
+		return pcall(region[method], region)
+	end
+	return false
+end
+
 local function SafeCallback(controller, region, callback)
 	return function(_, ...)
 		-- Capture owned references; an event's self argument is never trusted.
@@ -341,7 +348,9 @@ local function Create(controller)
 	local function ClearSearchFocus()
 		Call(controller, state.search, "ClearFocus")
 	end
-	Script(state.search, "OnEscapePressed", ClearSearchFocus)
+	Call(controller, state.search, "SetScript", "OnEscapePressed", function()
+		Dismiss(controller, state.search, "ClearFocus")
+	end)
 	Script(state.search, "OnEnterPressed", ClearSearchFocus)
 	Script(state.box, "OnTextChanged", function(userInput)
 		if not state.syncText and LibChev.CanAccess(userInput) and userInput == true then
@@ -391,11 +400,11 @@ local function Create(controller)
 	Script(state.buttons.log, "OnClick", function()
 		controller:ShowLog()
 	end)
-	local function Close()
-		Call(controller, frame, "Hide")
+	local function Close(source)
+		if LibChev.CanDismissOwnedRegion(source, policy) then Dismiss(controller, frame, "Hide") end
 	end
-	Script(close, "OnClick", Close)
-	Script(state.box, "OnEscapePressed", Close)
+	Call(controller, close, "SetScript", "OnClick", function() Close(close) end)
+	Call(controller, state.box, "SetScript", "OnEscapePressed", function() Close(state.box) end)
 	-- Release callbacks must record cancellation even when policy denies native
 	-- access. An independent owned frame can retry after a hidden window recovers.
 	local function FinishGesture()
@@ -443,11 +452,12 @@ local function Create(controller)
 		end
 	end)
 	Call(controller, resize, "SetScript", "OnMouseUp", FinishGesture)
-	local hideCleanup = SafeCallback(controller, frame, function()
-		Call(controller, state.box, "ClearFocus")
-		Call(controller, state.search, "ClearFocus")
-		Call(controller, state.popup, "Hide")
-	end)
+	local function hideCleanup()
+		if not LibChev.CanDismissOwnedRegion(frame, policy) then return end
+		Dismiss(controller, state.box, "ClearFocus")
+		Dismiss(controller, state.search, "ClearFocus")
+		Dismiss(controller, state.popup, "Hide")
+	end
 	Call(controller, frame, "SetScript", "OnHide", function()
 		FinishGesture()
 		hideCleanup()

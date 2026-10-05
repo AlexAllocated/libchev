@@ -60,3 +60,5 @@ Version 1.1.0 adds `NewDebugController` and one guarded console view used by all
 ## Optional localization
 
 Version 1.2.3 accepts an optional plain `policy.translate(text)` on debug, report and welcome controllers. Missing, throwing, inaccessible or non-string translations fall back to the original English. `Translate(policy, text)` and `TranslateFormat(policy, format, ...)` are available for consumers; `TestSummary(result, policy)` also accepts this policy. Internal categories, protocols, diagnostic keys and raw logs are unchanged. See [the callback contract and complete English catalog](LOCALIZATION.md).
+
+Version 1.2.4 adds `CanDismissOwnedRegion(region, policy)` for Hide/ClearFocus only. It still requires an accessible, nonprotected, nonforbidden region, an explicit consumer `canMutate` approval, and a readable boolean restriction result. A known active restriction blocks opening and layout, but does not trap an already-open owned window.

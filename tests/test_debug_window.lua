@@ -23,7 +23,9 @@ local function Fixture(deniedIndex)
 		end
 		return setmetatable(region, {
 			__index = function(_, method)
-				if method == "CreateTexture" or method == "CreateFontString" then
+				if method == "IsForbidden" or method == "IsProtected" then
+					return function() return region.denied end
+				elseif method == "CreateTexture" or method == "CreateFontString" then
 					return function(_, name, layer, template)
 						Equal(name, nil)
 						local child = Region(method, region)
@@ -66,7 +68,7 @@ local function Fixture(deniedIndex)
 				end
 				return function(_, ...)
 					local ok, restricted = pcall(state.controller.policy.ui.restricted)
-					if region.denied or not ok or restricted ~= false then
+					if region.denied or not ok or (restricted ~= false and not (restricted == true and (method == "Hide" or method == "ClearFocus"))) then
 						-- Count before throwing: production may contain this failure with pcall.
 						state.deniedAttempts = state.deniedAttempts + 1
 						error("mutation of denied debug fixture region")
@@ -427,7 +429,11 @@ Test("debug window callbacks and refresh fail closed after permission changes", 
 				callback({}, 1, true)
 			end
 		end
-		Equal(s.writes, writes)
+		if failure == "restricted" then
+			assert(s.writes > writes)
+			Equal(c.window.shown, false)
+			writes = s.writes
+		else Equal(s.writes, writes) end
 		Equal(T.RefreshDebugWindow(c), false)
 		Equal(T.OpenDebugWindow(c), false)
 		Equal(s.writes, writes)
@@ -536,7 +542,7 @@ Test("debug gesture release survives restrictions and hidden windows", function(
 				f.Drag.scripts.OnDragStop({})
 			end
 			wake.scripts.OnUpdate({})
-			Equal(s.writes, writes)
+			Equal(s.writes, writes + ((gesture == "hide" and denied == "restricted") and 3 or 0))
 			Equal(s.deniedAttempts, 0)
 			assert(c._debugWindowState.gestureStopPending)
 			s.restricted, f.denied = false, false
@@ -607,4 +613,24 @@ Test("translated debug labels preserve category keys controls and raw log text",
 	Equal(#c:GetEntries(), 0)
 	Equal(c:GetCategory(), "ALL")
 	Equal(s.deniedAttempts, 0)
+end)
+
+Test("debug dismissal stays available during restrictions but denied regions stay untouched", function()
+	for _, escape in ipairs({ false, true }) do
+		local s, c = Fixture()
+		assert(T.OpenDebugWindow(c))
+		local frame = c.window
+		s.restricted = true
+		local callback = escape and frame.TextBox.scripts.OnEscapePressed or frame.Close.scripts.OnClick
+		frame.denied = true
+		local before = s.writes
+		callback({})
+		Equal(frame.shown, true)
+		Equal(s.writes, before)
+		frame.denied = false
+		callback({})
+		Equal(frame.shown, false)
+		Equal(s.deniedAttempts, 0)
+		Equal(T.OpenDebugWindow(c), false)
+	end
 end)

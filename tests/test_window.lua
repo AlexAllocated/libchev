@@ -32,7 +32,7 @@ local function Fixture(deniedIndex)
 				end
 				return function(_, ...)
 					assert(not region.denied, "mutated denied region")
-					assert(state.restricted == false, "mutated while restricted")
+					assert(state.restricted == false or (state.restricted == true and (method == "Hide" or method == "ClearFocus")), "mutated while restricted")
 					state.writes = state.writes + 1
 					if method == "SetScript" then
 						local event, callback = ...
@@ -41,6 +41,15 @@ local function Fixture(deniedIndex)
 						region.text = ...
 					elseif method == "SetSize" then
 						region.width, region.height = ...
+					elseif method == "Hide" then
+						region.shown = false
+						if region.scripts.OnHide then region.scripts.OnHide(region) end
+					elseif method == "Show" then
+						region.shown = true
+					elseif method == "ClearFocus" then
+						region.focused = false
+					elseif method == "SetFocus" then
+						region.focused = true
 					elseif method == "HighlightText" then
 						region.selected = true
 					end
@@ -146,7 +155,10 @@ Test("window callbacks stop when restriction changes or region becomes protected
 				callback(region, name == "OnMouseWheel" and 1 or true)
 			end
 		end
-		Equal(s.writes, before)
+		if restricted == true then
+			assert(s.writes > before)
+			Equal(owner.diagnosticsWindow.shown, false)
+		else Equal(s.writes, before) end
 		Equal(T.OpenReportWindow(owner, "blocked", s.policy), false)
 	end
 end)
@@ -227,7 +239,32 @@ Test("translated report and link windows preserve selected text and guarded cont
 		s.restricted = true
 		local writes = s.writes
 		s.regions[8].scripts.OnClick({})
+		Equal(owner.diagnosticsWindow.shown, false)
+		assert(s.writes > writes)
+		writes = s.writes
 		s.regions[9].scripts.OnClick({})
 		Equal(s.writes, writes)
+	end
+end)
+
+Test("report dismissal clears focus during restriction and rejects protected or forbidden frames", function()
+	for _, escape in ipairs({ false, true }) do
+		local s, owner = Fixture(), {}
+		assert(T.OpenReportWindow(owner, "report", s.policy))
+		local frame = owner.diagnosticsWindow
+		s.restricted = true
+		local callback = escape and frame.TextBox.scripts.OnEscapePressed or s.regions[8].scripts.OnClick
+		for _, query in ipairs({ "IsProtected", "IsForbidden" }) do
+			frame[query] = function() return true end
+			local before = s.writes
+			callback({})
+			Equal(frame.shown, true)
+			Equal(s.writes, before)
+			frame[query] = nil
+		end
+		callback({})
+		Equal(frame.shown, false)
+		Equal(frame.TextBox.focused, false)
+		Equal(T.OpenReportWindow(owner, "report", s.policy), false)
 	end
 end)

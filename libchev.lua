@@ -2,7 +2,7 @@
 -- Private embedding: every addon receives its own library through its loader
 -- namespace. No global registry, Blizzard mutation, hooks, events or saved data.
 local _, namespace = ...
-local LibChev = { VERSION = "1.2.3", API_VERSION = 1 }
+local LibChev = { VERSION = "1.2.4", API_VERSION = 1 }
 local unpackValues = unpack or table.unpack
 local secret = type(issecretvalue) == "function" and issecretvalue or nil
 local accessible = type(canaccessvalue) == "function" and canaccessvalue or nil
@@ -119,6 +119,16 @@ function LibChev.CanMutateOwnedRegion(region)
 		end
 	end
 	return true
+end
+
+-- Dismissal is narrower than refresh/layout: only callers owning the region
+-- may use this for Hide/ClearFocus. Unknown policy still fails closed.
+function LibChev.CanDismissOwnedRegion(region, policy)
+	local ok, restricted = pcall(policy.restricted)
+	if not ok or not LibChev.CanAccess(restricted) or type(restricted) ~= "boolean"
+		or not LibChev.CanMutateOwnedRegion(region) then return false end
+	local checked, allowed = pcall(policy.canMutate, region)
+	return checked and LibChev.CanAccess(allowed) and allowed == true
 end
 
 function LibChev.ReadEnvironment(api)

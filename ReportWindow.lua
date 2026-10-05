@@ -119,15 +119,15 @@ function LibChev.OpenReportWindow(owner, text, policy)
 				self:HighlightText()
 			end
 		end)
-		local function Close()
-			if CanMutate(frame) then
-				frame:Hide()
+		local function Close(source)
+			if LibChev.CanDismissOwnedRegion(source, policy) and LibChev.CanDismissOwnedRegion(frame, policy) then
+				pcall(frame.Hide, frame)
 			end
 		end
-		box:SetScript("OnEscapePressed", Close)
+		box:SetScript("OnEscapePressed", function() Close(box) end)
 		frame:SetScript("OnHide", function()
-			if CanMutate(box) then
-				box:ClearFocus()
+			if LibChev.CanDismissOwnedRegion(frame, policy) and LibChev.CanDismissOwnedRegion(box, policy) then
+				pcall(box.ClearFocus, box)
 			end
 		end)
 		local close = policy.createFrame("Button", nil, frame, "UIPanelButtonTemplate")
@@ -137,7 +137,7 @@ function LibChev.OpenReportWindow(owner, text, policy)
 		close:SetSize(100, 24)
 		close:SetPoint("BOTTOMRIGHT", -20, 16)
 		close:SetText(LibChev.Translate(policy, "Close"))
-		close:SetScript("OnClick", Close)
+		close:SetScript("OnClick", function() Close(close) end)
 		local selectAll = policy.createFrame("Button", nil, frame, "UIPanelButtonTemplate")
 		if not CanMutate(selectAll) then
 			return false
