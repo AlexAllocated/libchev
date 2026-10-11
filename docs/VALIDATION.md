@@ -70,3 +70,21 @@ Offline controller tests inject frame queues and exercise whole-case isolation, 
 ## 1.2.4 safe window dismissal
 
 Debug and report/copy windows allow Close/Escape and focus cleanup during known runtime restrictions. Protected/forbidden regions, inaccessible values, unknown restriction states and consumer mutation denials still fail closed. Other buttons, opening, refresh/layout and gesture cancellation retain their existing guards. Offline tests cover safe dismissal and denied regions; live Retail/Forever interaction and taint remain separate validation.
+
+
+## 1.3.1 native console controls
+
+The console now uses current native search, scrollbar and button templates on its
+owned frames. Offline fixtures model template-created children, inherited search
+focus/instructions/clear behavior, percentage callbacks, steppers, held scrolling
+and thumb gestures. Tests retain existing copy, category paging, report switching,
+tail following, restriction and deferred gesture cleanup coverage, and additionally
+check child-region denial, hidden stale input, EventButton intrinsic postcalls,
+dynamically installed track release, and cancellation of native held-scroll
+updates and pressed artwork. The same guard is exported for consumer-owned
+scrollbars.
+
+The native definitions were checked against local Retail and Forever exports.
+Offline checks do not establish visual appearance, narration, or live taint safety.
+Live checks should exercise search/clear/focus, scrollbar arrows/drag/wheel, resizing,
+report/log switching and blocked-access transitions.

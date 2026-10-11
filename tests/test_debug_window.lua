@@ -1,6 +1,7 @@
 -- OFFLINE ONLY: private region and controller simulations.
 local Test, Equal, Load = ...
 local T = Load()
+local unpack = table.unpack or unpack
 
 local function Fixture(deniedIndex)
 	local state = { regions = {}, writes = 0, deniedAttempts = 0, restricted = false, range = 300, calls = {} }
@@ -9,11 +10,18 @@ local function Fixture(deniedIndex)
 			kind = kind,
 			parent = parent,
 			scripts = {},
-			shown = false,
+			shown = true,
 			text = "",
 			value = 0,
 			level = parent and parent.level + 1 or 0,
+			children = {},
+			regions = {},
+			callbacks = {},
 		}
+		if parent then
+			local list = (kind == "CreateTexture" or kind == "CreateFontString") and parent.regions or parent.children
+			list[#list + 1] = region
+		end
 		state.regions[#state.regions + 1] = region
 		region.denied = #state.regions == deniedIndex
 		local function Event(name, ...)
@@ -23,8 +31,39 @@ local function Fixture(deniedIndex)
 		end
 		return setmetatable(region, {
 			__index = function(_, method)
-				if method == "IsForbidden" or method == "IsProtected" then
-					return function() return region.denied end
+				if method == "GetChildren" then
+					return function()
+						return unpack(region.children)
+					end
+				elseif method == "GetRegions" then
+					return function()
+						return unpack(region.regions)
+					end
+				elseif method == "GetScript" then
+					if kind == "CreateTexture" or kind == "CreateFontString" then
+						return nil
+					end
+					return function(_, event)
+						return region.scripts[event]
+					end
+				elseif method == "HasScript" then
+					return function()
+						return true
+					end
+				elseif method == "GetFontString" then
+					return function()
+						return region.fontString
+					end
+				elseif method == "HasFocus" then
+					return function()
+						return region.focused == true
+					end
+				elseif method == "UnregisterUpdate" or method == "TriggerEvent" then
+					return nil
+				elseif method == "IsForbidden" or method == "IsProtected" then
+					return function()
+						return region.denied
+					end
 				elseif method == "CreateTexture" or method == "CreateFontString" then
 					return function(_, name, layer, template)
 						Equal(name, nil)
@@ -61,6 +100,10 @@ local function Fixture(deniedIndex)
 					return function()
 						return state.range
 					end
+				elseif method == "IsVisible" then
+					return function()
+						return region.shown and (not parent or parent:IsVisible())
+					end
 				elseif method == "IsShown" then
 					return function()
 						return region.shown
@@ -68,7 +111,14 @@ local function Fixture(deniedIndex)
 				end
 				return function(_, ...)
 					local ok, restricted = pcall(state.controller.policy.ui.restricted)
-					if region.denied or not ok or (restricted ~= false and not (restricted == true and (method == "Hide" or method == "ClearFocus"))) then
+					if
+						region.denied
+						or not ok
+						or (
+							restricted ~= false
+							and not (restricted == true and (method == "Hide" or method == "ClearFocus"))
+						)
+					then
 						-- Count before throwing: production may contain this failure with pcall.
 						state.deniedAttempts = state.deniedAttempts + 1
 						error("mutation of denied debug fixture region")
@@ -85,8 +135,25 @@ local function Fixture(deniedIndex)
 					elseif method == "SetScript" then
 						local event, callback = ...
 						region.scripts[event] = callback
+					elseif method == "HookScript" then
+						local event, hook = ...
+						local inherited = region.scripts[event]
+						region.scripts[event] = function(self, ...)
+							if inherited then
+								inherited(self, ...)
+							end
+							hook(self, ...)
+						end
+					elseif method == "RegisterCallback" then
+						local event, callback, owner = ...
+						region.callbacks[event] = function(...)
+							callback(owner, ...)
+						end
 					elseif method == "SetText" then
 						region.text = ...
+						if rawget(region, "fontString") then
+							region.fontString:SetText(region.text)
+						end
 						Event("OnTextChanged", false)
 					elseif method == "SetValue" then
 						region.value = ...
@@ -116,8 +183,10 @@ local function Fixture(deniedIndex)
 						end
 					elseif method == "SetFocus" then
 						region.focused = true
+						Event("OnEditFocusGained")
 					elseif method == "ClearFocus" then
 						region.focused = false
+						Event("OnEditFocusLost")
 					elseif method == "HighlightText" then
 						region.selected = true
 					elseif method == "StartMoving" then
@@ -131,6 +200,111 @@ local function Fixture(deniedIndex)
 			end,
 		})
 	end
+	local function Dispatcher(region)
+		function region:TriggerEvent(event, ...)
+			if self.callbacks[event] then
+				return self.callbacks[event](...)
+			end
+		end
+	end
+	local function Template(kind, parent, template)
+		local region = Region(kind, parent)
+		region.template = template
+		if template == "UIPanelButtonTemplate" then
+			region.fontString = Region("CreateFontString", region)
+		elseif template == "SearchBoxTemplate" then
+			region.Instructions = Region("CreateFontString", region)
+			region.Instructions.text, region.Instructions.shown = "Search", true
+			region.searchIcon = Region("CreateTexture", region)
+			region.clearButton = Region("Button", region)
+			region.clearButton.shown = false
+			region.clearButton.Icon = Region("CreateTexture", region.clearButton)
+			region.insets = { 16, 20, 0, 0 }
+			local function Update(self)
+				self.clearButton:SetShown(self:HasFocus() or self:GetText() ~= "")
+				self.Instructions:SetShown(self:GetText() == "")
+			end
+			region.scripts.OnTextChanged = Update
+			region.scripts.OnEditFocusGained = Update
+			region.scripts.OnEditFocusLost = Update
+			region.scripts.OnEscapePressed = function(self)
+				self:ClearFocus()
+			end
+			region.scripts.OnEnterPressed = region.scripts.OnEscapePressed
+			region.clearButton.scripts.OnClick = function(self)
+				self.parent:SetText("")
+				self.parent:ClearFocus()
+			end
+		elseif template == "MinimalScrollBar" then
+			Equal(kind, "EventFrame")
+			Dispatcher(region)
+			region.Track = Region("Frame", region)
+			region.Track.Thumb = Region("Button", region.Track)
+			region.Back, region.Forward = Region("Button", region), Region("Button", region)
+			region.percentage, region.visible, region.pan, region.wheelPanScalar = 0, 1, 1, 2
+			function region:Init(visible, pan)
+				self.visible, self.pan = visible, pan
+			end
+			function region:SetVisibleExtentPercentage(value)
+				self.visible = value
+			end
+			function region:SetPanExtentPercentage(value)
+				self.pan = value
+			end
+			function region:SetScrollPercentage(value)
+				self.percentage = math.max(0, math.min(1, value))
+				self:TriggerEvent("OnScroll", self.percentage)
+			end
+			function region:UnregisterUpdate()
+				self:SetScript("OnUpdate", nil)
+			end
+			region.scripts.OnMouseWheel = function(self, delta)
+				self:SetScrollPercentage(self.percentage - delta * self.pan * self.wheelPanScalar)
+			end
+			local function EventButton(button)
+				Dispatcher(button)
+				button.intrinsic = true
+				button.scripts.OnMouseDown = function(self)
+					self.down = true
+					return true
+				end
+				button.scripts.OnMouseUp = function(self)
+					self.down = false
+					return true
+				end
+				button.callbacks.OnMouseUp = function()
+					region:UnregisterUpdate()
+				end
+			end
+			for _, definition in ipairs({ { region.Back, -1 }, { region.Forward, 1 } }) do
+				local button, direction = definition[1], definition[2]
+				EventButton(button)
+				button.callbacks.OnMouseDown = function()
+					region:SetScrollPercentage(region.percentage + direction * region.pan)
+					region:SetScript("OnUpdate", function()
+						region:SetScrollPercentage(region.percentage + direction * region.pan)
+					end)
+				end
+			end
+			region.Track.scripts.OnMouseDown = function()
+				region:SetScrollPercentage(region.percentage - 0.5)
+				region:SetScript("OnUpdate", function()
+					region:SetScrollPercentage(region.percentage - 0.5)
+				end)
+				region.Track:SetScript("OnMouseUp", function()
+					region:UnregisterUpdate()
+				end)
+			end
+			EventButton(region.Track.Thumb)
+			region.Track.Thumb.callbacks.OnMouseDown = function()
+				region:SetScript("OnUpdate", function()
+					region:SetScrollPercentage(0.5)
+				end)
+			end
+		end
+		return region
+	end
+
 	local controller = { title = "Fixture Debug", mode = "log", category = "ALL", search = "", tailPinned = true }
 	controller.policy = {
 		ui = {
@@ -145,9 +319,9 @@ local function Fixture(deniedIndex)
 				end
 				return false
 			end,
-			createFrame = function(kind, name, parent)
+			createFrame = function(kind, name, parent, template)
 				Equal(name, nil)
-				return Region(kind, parent)
+				return Template(kind, parent, template)
 			end,
 		},
 		reload = function()
@@ -209,7 +383,20 @@ local function Fixture(deniedIndex)
 		return T.OpenDebugWindow(self)
 	end
 	state.controller = controller
+	state.createTemplate = Template
 	return state, controller
+end
+
+local function NativeEvent(region, event, ...)
+	if region.scripts[event] then
+		region.scripts[event](region, ...)
+	end
+	-- EventButton XML intrinsicOrder="postcall" runs separately, even when an
+	-- ordinary mouse handler returned early. This is how Blizzard steppers
+	-- install native held-scroll work after the appearance script finishes.
+	if rawget(region, "intrinsic") then
+		region:TriggerEvent(event, ...)
+	end
 end
 
 local function Click(region)
@@ -238,7 +425,8 @@ Test("debug window guards every created region before its first mutation", funct
 	for index = 1, #baseline.regions do
 		local s, c = Fixture(index)
 		Equal(T.OpenDebugWindow(c), false)
-		Equal(#s.regions, index)
+		assert(#s.regions >= index)
+		Equal(s.deniedAttempts, 0)
 	end
 end)
 
@@ -312,7 +500,7 @@ Test("debug window tail follows new events until user scrolls up", function()
 	s.range = 500
 	assert(c:Refresh())
 	Equal(c.window.Scroll.scroll, 264)
-	c.window.Slider.scripts.OnValueChanged({}, 500)
+	c.window.Slider:SetScrollPercentage(1)
 	Equal(c.tailPinned, true)
 	s.range = 600
 	assert(c:Refresh())
@@ -331,7 +519,7 @@ Test("debug window diagnostics and tests reuse console and start at top", functi
 	Equal(frame.Search.shown, false)
 	Equal(frame.Buttons.clear.shown, false)
 	Equal(frame.TextBox.selected, true)
-	frame.Slider.scripts.OnValueChanged({}, 80)
+	frame.Slider:SetScrollPercentage(80 / s.range)
 	assert(c:Refresh())
 	Equal(frame.Scroll.scroll, 80)
 	Click(frame.Buttons.tests)
@@ -433,7 +621,9 @@ Test("debug window callbacks and refresh fail closed after permission changes", 
 			assert(s.writes > writes)
 			Equal(c.window.shown, false)
 			writes = s.writes
-		else Equal(s.writes, writes) end
+		else
+			Equal(s.writes, writes)
+		end
 		Equal(T.RefreshDebugWindow(c), false)
 		Equal(T.OpenDebugWindow(c), false)
 		Equal(s.writes, writes)
@@ -633,4 +823,158 @@ Test("debug dismissal stays available during restrictions but denied regions sta
 		Equal(s.deniedAttempts, 0)
 		Equal(T.OpenDebugWindow(c), false)
 	end
+end)
+
+Test("debug native search preserves instructions clear button and focus callbacks", function()
+	local s, c = Fixture()
+	assert(T.OpenDebugWindow(c))
+	local search = c.window.Search
+	Equal(search.template, "SearchBoxTemplate")
+	Equal(c.window.Buttons.select.template, "UIPanelButtonTemplate")
+	Equal(c.window.Close.template, "UIPanelCloseButtonNoScripts")
+	Equal(search.insets[1], 16)
+	Equal(search.Instructions.shown, true)
+	Equal(search.clearButton.shown, false)
+	search:SetFocus()
+	Equal(search.clearButton.shown, true)
+	search:SetText('"matching phrase"')
+	Equal(c:GetSearch(), '"matching phrase"')
+	Equal(search.Instructions.shown, false)
+	Click(search.clearButton)
+	Equal(c:GetSearch(), "")
+	Equal(search.focused, false)
+	Equal(search.clearButton.shown, false)
+	Equal(search.Instructions.shown, true)
+	Equal(s.deniedAttempts, 0)
+end)
+
+Test("debug native scrollbar maps percentages arrows wheel and thumb to existing tail behavior", function()
+	local s, c = Fixture()
+	assert(T.OpenDebugWindow(c))
+	local scroll, bar = c.window.Scroll, c.window.Slider
+	Equal(bar.template, "MinimalScrollBar")
+	Equal(bar.percentage, 1)
+	assert(bar.visible > 0 and bar.visible < 1)
+	NativeEvent(bar.Back, "OnMouseDown", "LeftButton")
+	Equal(scroll.scroll, 264)
+	Equal(c.tailPinned, false)
+	NativeEvent(bar.Back, "OnMouseUp", "LeftButton")
+	Equal(bar.scripts.OnUpdate, nil)
+	bar.scripts.OnMouseWheel({}, -1)
+	Equal(scroll.scroll, 300)
+	Equal(c.tailPinned, true)
+	NativeEvent(bar.Track.Thumb, "OnMouseDown", "LeftButton")
+	bar.scripts.OnUpdate({}, 0.016)
+	Equal(scroll.scroll, 150)
+	Equal(c.tailPinned, false)
+	NativeEvent(bar.Track.Thumb, "OnMouseUp", "LeftButton")
+	s.range = 0
+	assert(c:Refresh())
+	Equal(bar.percentage, 0)
+	Equal(bar.visible, 1)
+	Equal(bar.pan, 1)
+	Equal(scroll.scroll, 0)
+	Equal(s.deniedAttempts, 0)
+end)
+
+Test("debug native held scroll cancels after restricted updates release and hide", function()
+	for _, action in ipairs({ "update", "release", "hide" }) do
+		local s, c = Fixture()
+		assert(T.OpenDebugWindow(c))
+		local bar = c.window.Slider
+		NativeEvent(bar.Back, "OnMouseDown", "LeftButton")
+		local position = c.window.Scroll.scroll
+		s.restricted = true
+		if action == "update" then
+			bar.scripts.OnUpdate({}, 0.016)
+		elseif action == "release" then
+			NativeEvent(bar.Back, "OnMouseUp", "LeftButton")
+		else
+			Click(c.window.Close)
+		end
+		Equal(c.window.Scroll.scroll, position)
+		s.restricted = false
+		if action == "hide" then
+			assert(T.OpenDebugWindow(c))
+		end
+		if bar.scripts.OnUpdate then
+			bar.scripts.OnUpdate({}, 0.016)
+		end
+		Equal(c.window.Scroll.scroll, position)
+		Equal(bar.scripts.OnUpdate, nil)
+		Equal(bar.Back.down, false)
+		Equal(s.deniedAttempts, 0)
+	end
+end)
+
+Test("debug native child denial prevents inherited script and scroll mutations", function()
+	local s, c = Fixture()
+	assert(T.OpenDebugWindow(c))
+	local search, bar = c.window.Search, c.window.Slider
+	search:SetText("keep")
+	search.Instructions.denied = true
+	local writes = s.writes
+	Click(search.clearButton)
+	Equal(c:GetSearch(), "keep")
+	Equal(s.writes, writes)
+	search.Instructions.denied = false
+	bar.Back.denied = true
+	writes = s.writes
+	bar.scripts.OnMouseWheel({}, 1)
+	c.window.Scroll.scripts.OnMouseWheel({}, 1)
+	Equal(s.writes, writes)
+	Equal(s.deniedAttempts, 0)
+end)
+
+Test("debug native track paging guards its dynamically installed release callback", function()
+	local s, c = Fixture()
+	assert(T.OpenDebugWindow(c))
+	local bar = c.window.Slider
+	bar.Track.scripts.OnMouseDown({}, "LeftButton")
+	Equal(c.window.Scroll.scroll, 150)
+	s.restricted = true
+	local writes = s.writes
+	bar.Track.scripts.OnMouseUp({}, "LeftButton")
+	Equal(s.writes, writes)
+	s.restricted = false
+	bar.scripts.OnUpdate({}, 0.016)
+	Equal(c.window.Scroll.scroll, 150)
+	Equal(bar.scripts.OnUpdate, nil)
+	Equal(s.deniedAttempts, 0)
+end)
+
+Test("debug denied native intrinsic mouse dispatch cannot start held scrolling", function()
+	local s, c = Fixture()
+	assert(T.OpenDebugWindow(c))
+	local bar = c.window.Slider
+	s.restricted = true
+	local writes = s.writes
+	NativeEvent(bar.Back, "OnMouseDown", "LeftButton")
+	NativeEvent(bar.Track.Thumb, "OnMouseDown", "LeftButton")
+	Equal(bar.scripts.OnUpdate, nil)
+	Equal(c.window.Scroll.scroll, 300)
+	Equal(s.writes, writes)
+	Equal(s.deniedAttempts, 0)
+end)
+
+Test("shared owned scrollbar guard keeps hidden geometry usable and rejects stale native input", function()
+	local s, c = Fixture()
+	local bar = s.createTemplate("EventFrame", nil, "MinimalScrollBar")
+	local canUse, stop = T.GuardOwnedScrollBar(bar, function(region)
+		return not s.restricted and c.policy.ui.canMutate(region)
+	end)
+	bar:Hide()
+	assert(canUse())
+	bar:Init(0.5, 0.1)
+	NativeEvent(bar.Back, "OnMouseDown", "LeftButton")
+	Equal(bar.scripts.OnUpdate, nil)
+	Equal(bar.percentage, 0)
+	bar:Show()
+	bar:SetScrollPercentage(1)
+	NativeEvent(bar.Back, "OnMouseDown", "LeftButton")
+	assert(bar.scripts.OnUpdate)
+	stop()
+	Equal(bar.scripts.OnUpdate, nil)
+	Equal(bar.Back.down, false)
+	Equal(s.deniedAttempts, 0)
 end)

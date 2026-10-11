@@ -1,4 +1,4 @@
-# Shared debug controller (1.3.0 integration contract)
+# Shared debug controller (1.3.1 integration contract)
 
 Load libchev.lua, Debug.lua, DebugWindow.lua, ReportWindow.lua, SelfTests.lua, then consumer code. `LibChev.NewDebugController(policy)` returns an addon-owned controller. The library owns logs/filtering/search/batching/test presentation/command dispatch/console creation and controls. Consumer adapters supply only private data and domain policies.
 
@@ -30,7 +30,7 @@ Window/controller fields used by the shared view are owned: `window`, `mode` (lo
 
 `LibChev.FormatSafe(format,...)` and `LibChev.StateText(label,value)` expose the same safe primitive formatting for compatibility adapters; no foreign object coercion. Internal batches restore their previous depth after a failed policy callback. Presentation failures retain a chat test-summary fallback and never leave the runner locked.
 
-The console uses native WoW texture-only templates for its panel borders and buttons, plus tiled marble/rock artwork. Frames, textures, scripts and state remain privately owned; it does not inherit frame scripts, use shared UI pools, or register global frame names. Presented test runs end with one summary, including when bounded history evicts earlier details.
+The console keeps its native texture-only panel borders and tiled marble/rock artwork. Buttons use UIPanelButtonTemplate; its owned close control uses UIPanelCloseButtonNoScripts with guarded dismissal. SearchBoxTemplate supplies the native search icon, instructions and clear button. MinimalScrollBar supplies proportional thumb and arrow controls, mapping percentages onto the existing pixel-based scroll and tail-follow model. These templates instantiate private child regions. Inherited scripts retain native presentation and interaction under the consumer's restriction policy; held scrolling is cancelled after a denied update or release. The console does not use shared UI pools or register global frame names. Presented test runs end with one summary, including when bounded history evicts earlier details.
 
 ## Consumer translation
 

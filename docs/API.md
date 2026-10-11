@@ -64,3 +64,25 @@ Version 1.1.0 adds `NewDebugController` and one guarded console view used by all
 Version 1.2.3 accepts an optional plain `policy.translate(text)` on debug, report and welcome controllers. Missing, throwing, inaccessible or non-string translations fall back to the original English. `Translate(policy, text)` and `TranslateFormat(policy, format, ...)` are available for consumers; `TestSummary(result, policy)` also accepts this policy. Internal categories, protocols, diagnostic keys and raw logs are unchanged. See [the callback contract and complete English catalog](LOCALIZATION.md).
 
 Version 1.2.4 adds `CanDismissOwnedRegion(region, policy)` for Hide/ClearFocus only. It still requires an accessible, nonprotected, nonforbidden region, an explicit consumer `canMutate` approval, and a readable boolean restriction result. A known active restriction blocks opening and layout, but does not trap an already-open owned window.
+
+
+## Owned native scrollbars (1.3.1)
+
+`GuardOwnedScrollBar(scrollBar, canMutate)` is supplied by `DebugWindow.lua`.
+Call it once, immediately after creating an addon-owned `MinimalScrollBar`, while
+creation/mutation is permitted. Never pass a Blizzard-owned or shared frame.
+`canMutate(region)` must return exactly true only when each supplied owned region
+is currently safe to mutate; failed/unknown queries fail closed. The predicate
+owns lifecycle and restriction decisions, but must allow hidden geometry updates.
+
+The function returns `canUse(), stop()`. Check `canUse()` before your native
+programmatic scrollbar updates; call `stop()` when hiding or retiring the control.
+`stop()` cancels held scrolling immediately when allowed or records cancellation
+for the next permitted update/event. Native mouse input and held-scroll updates
+are independently gated on visibility. Normal percentage synchronization and
+layout remain available while hidden.
+
+The adapter preserves native scripts and guards the owned instance's event
+dispatch, including EventButton intrinsic postcalls and dynamically installed
+track release/update handlers. It also releases pressed artwork after deferred
+cancellation. Shared Blizzard mixins and global frames are never modified.

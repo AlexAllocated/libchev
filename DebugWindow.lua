@@ -3,7 +3,8 @@ local _, namespace = ...
 local LibChev = assert(namespace.LibChev, "Load libchev.lua first")
 
 -- Every region is created by this module. Policies and controllers are owned
--- by the embedding addon. No shared dropdown pools or input-scroll helpers.
+-- by the embedding addon. Native templates instantiate private child regions;
+-- no shared dropdown pools or global frame objects are modified.
 local function Allowed(controller)
 	local policy = controller.policy.ui
 	local ok, restricted = pcall(policy.restricted)
@@ -41,7 +42,196 @@ local function SafeCallback(controller, region, callback)
 	end
 end
 
+local function GuardNativeControl(root, canMutate)
+	local function CanMutate(region)
+		local ok, allowed = pcall(canMutate, region)
+		return ok and LibChev.CanAccess(allowed) and allowed == true
+	end
+	local function ControlCall(region, method, ...)
+		if not CanMutate(region) then
+			error("native control mutation denied", 0)
+		end
+		return region[method](region, ...)
+	end
+	-- GetChildren/GetRegions traverse only the tree just created for this
+	-- private control. Preserve native scripts, including their hover art,
+	-- narration, focus/clear behavior and scrollbar gesture handling.
+	local regions = {}
+	local function Collect(region)
+		if not CanMutate(region) then
+			error("debug template region denied", 0)
+		end
+		regions[#regions + 1] = region
+		for _, method in ipairs({ "GetChildren", "GetRegions" }) do
+			if type(region[method]) == "function" then
+				for _, child in ipairs({ ControlCall(region, method) }) do
+					Collect(child)
+				end
+			end
+		end
+	end
+	Collect(root)
+	local function CanUse()
+		for _, region in ipairs(regions) do
+			if not CanMutate(region) then
+				return false
+			end
+		end
+		return true
+	end
+	local inputEvents = {
+		OnClick = true,
+		OnMouseDown = true,
+		OnMouseUp = true,
+		OnMouseWheel = true,
+		OnEnter = true,
+		OnLeave = true,
+		OnEnterPressed = true,
+		OnEscapePressed = true,
+	}
+	local function InputVisible()
+		local query = root.IsVisible or root.IsShown
+		local ok, visible = pcall(query, root)
+		return ok and LibChev.CanAccess(visible) and visible == true
+	end
+	local pendingStop, wrappedUpdate, wrappedRelease
+	local activeReleases = {}
+	local function Stop()
+		if type(root.UnregisterUpdate) == "function" then
+			pendingStop = true
+			if CanUse() then
+				ControlCall(root, "UnregisterUpdate")
+				pendingStop = false
+				for region, release in pairs(activeReleases) do
+					activeReleases[region] = nil
+					pcall(release, region, "LeftButton", false)
+				end
+			end
+		else
+			pendingStop = false
+		end
+	end
+	local function ProtectUpdate()
+		-- Track paging installs its release handler only when clicked.
+		-- Preserve that handler too, before it can run under a new policy.
+		if type(root.UnregisterUpdate) == "function" then
+			local track = root.Track
+			local release = ControlCall(track, "GetScript", "OnMouseUp")
+			if release and release ~= wrappedRelease then
+				wrappedRelease = function(_, ...)
+					if not CanUse() then
+						pendingStop = true
+						return
+					end
+					pcall(release, track, ...)
+				end
+				ControlCall(track, "SetScript", "OnMouseUp", wrappedRelease)
+			end
+		end
+		local update = ControlCall(root, "GetScript", "OnUpdate")
+		if update and update ~= wrappedUpdate then
+			wrappedUpdate = function(_, elapsed)
+				if not CanUse() then
+					pendingStop = true
+					return
+				end
+				if pendingStop or not InputVisible() then
+					Stop()
+					return
+				end
+				pcall(update, root, elapsed)
+			end
+			ControlCall(root, "SetScript", "OnUpdate", wrappedUpdate)
+		end
+	end
+	for _, region in ipairs(regions) do
+		-- EventButton intrinsic postcall scripts dispatch AFTER an ordinary
+		-- mouse handler. Guard this owned instance's dispatch as well so its
+		-- native gesture callbacks cannot install an unguarded update later.
+		local dispatch = region.TriggerEvent
+		if type(dispatch) == "function" then
+			local owned = region
+			region.TriggerEvent = function(_, event, ...)
+				if not CanUse() or (inputEvents[event] and not InputVisible()) then
+					pendingStop = true
+					Stop()
+					return
+				end
+				if pendingStop then
+					Stop()
+				end
+				local ok, result = pcall(dispatch, owned, event, ...)
+				if CanUse() then
+					ProtectUpdate()
+				end
+				if ok then
+					return result
+				end
+			end
+		end
+		if type(region.GetScript) == "function" then
+			for _, event in ipairs({
+				"OnClick",
+				"OnTextChanged",
+				"OnEscapePressed",
+				"OnEnterPressed",
+				"OnEditFocusLost",
+				"OnEditFocusGained",
+				"OnEnter",
+				"OnLeave",
+				"OnMouseDown",
+				"OnMouseUp",
+				"OnMouseWheel",
+				"OnSizeChanged",
+				"OnEnable",
+				"OnDisable",
+			}) do
+				if ControlCall(region, "HasScript", event) then
+					local native = ControlCall(region, "GetScript", event)
+					if native then
+						local owned = region
+						local release = event == "OnMouseDown" and ControlCall(region, "GetScript", "OnMouseUp")
+						ControlCall(region, "SetScript", event, function(_, ...)
+							if not CanUse() or (inputEvents[event] and not InputVisible()) then
+								pendingStop = true
+								Stop()
+								return
+							end
+							if pendingStop then
+								Stop()
+							end
+							local ok, result = pcall(native, owned, ...)
+							if ok and event == "OnMouseDown" and result == true and release then
+								activeReleases[owned] = release
+							elseif ok and event == "OnMouseUp" then
+								activeReleases[owned] = nil
+							end
+							if CanUse() then
+								ProtectUpdate()
+							end
+							if ok then
+								return result
+							end
+						end)
+					end
+				end
+			end
+		end
+	end
+	return CanUse, Stop
+end
+
+-- Install once, immediately after creating an addon-owned MinimalScrollBar.
+-- The predicate owns all restriction/lifetime decisions. No foreign frame or
+-- shared mixin is modified; both returned functions close over this instance.
+function LibChev.GuardOwnedScrollBar(scrollBar, canMutate)
+	return GuardNativeControl(scrollBar, canMutate)
+end
+
 local function SetScroll(controller, state, value, fromUser)
+	if not state.canScroll() then
+		return false
+	end
 	local maximum = LibChev.Number(Call(controller, state.scroll, "GetVerticalScrollRange"))
 	value = LibChev.Number(value)
 	if not maximum or not value then
@@ -51,8 +241,10 @@ local function SetScroll(controller, state, value, fromUser)
 	value = math.max(0, math.min(maximum, value))
 	state.syncScroll = true
 	Call(controller, state.scroll, "SetVerticalScroll", value)
-	Call(controller, state.slider, "SetMinMaxValues", 0, maximum)
-	Call(controller, state.slider, "SetValue", value)
+	local viewport = math.max(1, LibChev.Number(Call(controller, state.scroll, "GetHeight")) or 1)
+	Call(controller, state.slider, "SetVisibleExtentPercentage", viewport / (viewport + maximum))
+	Call(controller, state.slider, "SetPanExtentPercentage", maximum > 0 and math.min(1, 36 / maximum) or 1)
+	Call(controller, state.slider, "SetScrollPercentage", maximum > 0 and value / maximum or 0, true)
 	state.syncScroll = false
 	if fromUser and controller.mode ~= "report" then
 		controller.tailPinned = maximum - value <= 2
@@ -72,11 +264,11 @@ end
 
 local function Create(controller)
 	local policy, state = controller.policy.ui, { rows = {}, popupOffset = 0 }
-	local function New(kind, parent)
+	local function New(kind, parent, template)
 		if not Allowed(controller) then
 			error("debug window creation denied", 0)
 		end
-		local region = policy.createFrame(kind, nil, parent)
+		local region = policy.createFrame(kind, nil, parent, template)
 		if not Guard(controller, region) then
 			error("debug window region denied", 0)
 		end
@@ -88,12 +280,6 @@ local function Create(controller)
 			error("debug window label denied", 0)
 		end
 		return label
-	end
-	local function Background(parent, shade)
-		local texture = Call(controller, parent, "CreateTexture", nil, "BACKGROUND")
-		Call(controller, texture, "SetAllPoints")
-		Call(controller, texture, "SetColorTexture", shade, shade, shade, 0.98)
-		return texture
 	end
 	local function NativeTexture(parent, template, layer, width, height)
 		-- Texture-only templates supply Blizzard's artwork, never frame scripts,
@@ -118,21 +304,17 @@ local function Create(controller)
 		Call(controller, texture, "SetVertTile", true)
 		return texture
 	end
-	local function ButtonArt(button, setter, template)
-		local texture = NativeTexture(button, template, "ARTWORK")
-		Call(controller, texture, "SetAllPoints")
-		Call(controller, button, setter, texture)
+	local function ProtectTemplate(root)
+		return GuardNativeControl(root, function(region)
+			return (not controller.window or Guard(controller, controller.window)) and Guard(controller, region)
+		end)
 	end
 	local function Button(parent, label, width)
-		local button = New("Button", parent)
+		local button = New("Button", parent, "UIPanelButtonTemplate")
+		ProtectTemplate(button)
 		Call(controller, button, "SetSize", width or 90, 24)
-		ButtonArt(button, "SetNormalTexture", "DialogButtonNormalTexture")
-		ButtonArt(button, "SetPushedTexture", "DialogButtonPushedTexture")
-		ButtonArt(button, "SetHighlightTexture", "DialogButtonHighlightTexture")
-		local text = Label(button, "GameFontNormalSmall")
-		Call(controller, text, "SetPoint", "CENTER")
-		Call(controller, text, "SetText", LibChev.Translate(controller.policy, label))
-		button.Label = text
+		Call(controller, button, "SetText", LibChev.Translate(controller.policy, label))
+		button.Label = Call(controller, button, "GetFontString")
 		return button
 	end
 	local frame = New("Frame", policy.parent)
@@ -186,22 +368,12 @@ local function Create(controller)
 	Call(controller, drag, "SetHeight", 34)
 	Call(controller, drag, "EnableMouse", true)
 	Call(controller, drag, "RegisterForDrag", "LeftButton")
-	local close = New("Button", frame)
+	-- Native close art without the default HideUIPanel route: this is our own
+	-- window and retains its explicit fail-closed dismissal policy.
+	local close = New("Button", frame, "UIPanelCloseButtonNoScripts")
 	Call(controller, close, "SetSize", 32, 32)
 	Call(controller, close, "SetPoint", "TOPRIGHT", 2, 1)
-	for _, art in ipairs({
-		{ "SetNormalTexture", "Up" },
-		{ "SetPushedTexture", "Down" },
-		{ "SetHighlightTexture", "Highlight" },
-	}) do
-		local texture = NativeTexture(close, nil, "ARTWORK")
-		Call(controller, texture, "SetAllPoints")
-		Call(controller, texture, "SetTexture", "Interface\\Buttons\\UI-Panel-MinimizeButton-" .. art[2])
-		if art[2] == "Highlight" then
-			Call(controller, texture, "SetBlendMode", "ADD")
-		end
-		Call(controller, close, art[1], texture)
-	end
+	Call(controller, close, "SetFrameLevel", Call(controller, frame, "GetFrameLevel") + 3)
 
 	state.buttons = {}
 	local previous
@@ -226,14 +398,13 @@ local function Create(controller)
 	state.searchLabel = Label(frame)
 	Call(controller, state.searchLabel, "SetPoint", "LEFT", state.category, "RIGHT", 12, 0)
 	Call(controller, state.searchLabel, "SetText", LibChev.Translate(controller.policy, "Search:"))
-	state.search = New("EditBox", frame)
-	Background(state.search, 0.13)
+	state.search = New("EditBox", frame, "SearchBoxTemplate")
+	state.canSearch = ProtectTemplate(state.search)
 	Call(controller, state.search, "SetPoint", "TOPLEFT", frame, "TOPLEFT", 265, -77)
 	Call(controller, state.search, "SetPoint", "TOPRIGHT", frame, "TOPRIGHT", -16, -77)
 	Call(controller, state.search, "SetHeight", 24)
 	Call(controller, state.search, "SetFontObject", "ChatFontNormal")
 	Call(controller, state.search, "SetAutoFocus", false)
-	Call(controller, state.search, "SetTextInsets", 5, 5, 0, 0)
 	Call(controller, state.search, "SetMaxLetters", 256)
 	state.hint = Label(frame)
 	Call(controller, state.hint, "SetPoint", "TOPLEFT", 16, -111)
@@ -262,19 +433,14 @@ local function Create(controller)
 	Call(controller, state.scroll, "SetScrollChild", state.box)
 	state.measure = Label(frame, "ChatFontNormal")
 	Call(controller, state.measure, "Hide")
-	state.slider = New("Slider", frame)
-	Call(controller, state.slider, "SetPoint", "TOPLEFT", state.scroll, "TOPRIGHT", 8, 0)
-	Call(controller, state.slider, "SetPoint", "BOTTOMLEFT", state.scroll, "BOTTOMRIGHT", 8, 0)
-	Call(controller, state.slider, "SetWidth", 14)
-	Call(controller, state.slider, "SetOrientation", "VERTICAL")
-	Call(controller, state.slider, "SetMinMaxValues", 0, 0)
-	Call(controller, state.slider, "SetValueStep", 1)
+	state.slider = New("EventFrame", frame, "MinimalScrollBar")
+	state.canScroll, state.stopScroll = ProtectTemplate(state.slider)
+	state.slider.wheelPanScalar = 1 -- retain the same 36-pixel wheel step over the bar and content
+	Call(controller, state.slider, "SetPoint", "TOPLEFT", state.scroll, "TOPRIGHT", 10, 0)
+	Call(controller, state.slider, "SetPoint", "BOTTOMLEFT", state.scroll, "BOTTOMRIGHT", 10, 0)
 	Call(controller, state.slider, "EnableMouseWheel", true)
-	Background(state.slider, 0.16)
-	local thumb = Call(controller, state.slider, "CreateTexture", nil, "OVERLAY")
-	Call(controller, thumb, "SetSize", 18, 30)
-	Call(controller, thumb, "SetTexture", "Interface\\Buttons\\UI-ScrollBar-Knob")
-	Call(controller, state.slider, "SetThumbTexture", thumb)
+	Call(controller, state.slider, "Init", 1, 1)
+
 	state.footer = Label(frame)
 	Call(controller, state.footer, "SetPoint", "BOTTOMLEFT", 16, 10)
 	local resize = Button(frame, "/", 20)
@@ -337,21 +503,20 @@ local function Create(controller)
 			Popup()
 		end
 	end)
-	Script(state.search, "OnTextChanged", function()
-		if not state.syncText then
-			local text = Call(controller, state.search, "GetText")
-			if LibChev.CanAccess(text) and type(text) == "string" then
-				controller:SetSearch(text)
+	Call(
+		controller,
+		state.search,
+		"HookScript",
+		"OnTextChanged",
+		SafeCallback(controller, state.search, function()
+			if not state.syncText and state.canSearch() then
+				local text = Call(controller, state.search, "GetText")
+				if LibChev.CanAccess(text) and type(text) == "string" then
+					controller:SetSearch(text)
+				end
 			end
-		end
-	end)
-	local function ClearSearchFocus()
-		Call(controller, state.search, "ClearFocus")
-	end
-	Call(controller, state.search, "SetScript", "OnEscapePressed", function()
-		Dismiss(controller, state.search, "ClearFocus")
-	end)
-	Script(state.search, "OnEnterPressed", ClearSearchFocus)
+		end)
+	)
 	Script(state.box, "OnTextChanged", function(userInput)
 		if not state.syncText and LibChev.CanAccess(userInput) and userInput == true then
 			state.syncText = true
@@ -368,12 +533,13 @@ local function Create(controller)
 		end
 	end
 	Script(state.scroll, "OnMouseWheel", Wheel)
-	Script(state.slider, "OnMouseWheel", Wheel)
-	Script(state.slider, "OnValueChanged", function(value)
-		if not state.syncScroll then
-			SetScroll(controller, state, value, true)
+	Call(controller, state.slider, "RegisterCallback", "OnScroll", function(_, percentage)
+		percentage = LibChev.Number(percentage)
+		if percentage and not state.syncScroll and state.canScroll() and Guard(controller, state.scroll) then
+			local maximum = LibChev.Number(Call(controller, state.scroll, "GetVerticalScrollRange")) or 0
+			SetScroll(controller, state, maximum * percentage, true)
 		end
-	end)
+	end, state)
 	Script(state.scroll, "OnVerticalScroll", function(value)
 		if not state.syncScroll then
 			SetScroll(controller, state, value, true)
@@ -401,10 +567,16 @@ local function Create(controller)
 		controller:ShowLog()
 	end)
 	local function Close(source)
-		if LibChev.CanDismissOwnedRegion(source, policy) then Dismiss(controller, frame, "Hide") end
+		if LibChev.CanDismissOwnedRegion(source, policy) then
+			Dismiss(controller, frame, "Hide")
+		end
 	end
-	Call(controller, close, "SetScript", "OnClick", function() Close(close) end)
-	Call(controller, state.box, "SetScript", "OnEscapePressed", function() Close(state.box) end)
+	Call(controller, close, "SetScript", "OnClick", function()
+		Close(close)
+	end)
+	Call(controller, state.box, "SetScript", "OnEscapePressed", function()
+		Close(state.box)
+	end)
 	-- Release callbacks must record cancellation even when policy denies native
 	-- access. An independent owned frame can retry after a hidden window recovers.
 	local function FinishGesture()
@@ -453,7 +625,10 @@ local function Create(controller)
 	end)
 	Call(controller, resize, "SetScript", "OnMouseUp", FinishGesture)
 	local function hideCleanup()
-		if not LibChev.CanDismissOwnedRegion(frame, policy) then return end
+		state.stopScroll()
+		if not LibChev.CanDismissOwnedRegion(frame, policy) then
+			return
+		end
 		Dismiss(controller, state.box, "ClearFocus")
 		Dismiss(controller, state.search, "ClearFocus")
 		Dismiss(controller, state.popup, "Hide")
