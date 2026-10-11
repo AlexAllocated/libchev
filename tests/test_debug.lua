@@ -210,7 +210,7 @@ Test("shared test commands replace TEST history show results and retain other ca
 	assert(not c:GetText():find("1 passed, 0 failed", 1, true))
 	assert(not c:GetText():find("private detail", 1, true))
 	Equal(#c:GetEntries("STATE", ""), 1)
-	assert(c:GetText():find("library=libchev 1.2.4", 1, true))
+	assert(c:GetText():find("library=libchev 1.3.0", 1, true))
 end)
 Test("shared tests preserve visible ALL view but clear its search", function()
 	local c, L = Fixture()
@@ -488,12 +488,14 @@ Test("translated controller summaries and fallback leave diagnostic keys and fai
 			return translations[text] or text
 		end,
 		getTests = function()
-			return { {
-				name = "raw failure name",
-				run = function()
-					error("raw failure detail")
-				end,
-			} }
+			return {
+				{
+					name = "raw failure name",
+					run = function()
+						error("raw failure detail")
+					end,
+				},
+			}
 		end,
 	})
 	L.OpenDebugWindow = function()
@@ -514,4 +516,366 @@ Test("translated controller summaries and fallback leave diagnostic keys and fai
 	assert(c:GetText():find("purpose=Verification isolee.", 1, true))
 	assert(c:GetText():find("[FAIL] raw failure name", 1, true))
 	Equal(c:GetCategory(), "TEST")
+end)
+
+local function Frames()
+	local pending = {}
+	return function(callback)
+		pending[#pending + 1] = callback
+	end, function()
+		local current = pending
+		pending = {}
+		for _, callback in ipairs(current) do
+			callback()
+		end
+		return current
+	end, function()
+		return #pending
+	end
+end
+
+Test("presented async tests yield between whole isolated cases and reject duplicate callbacks", function()
+	local schedule, frame, queued = Frames()
+	local active, order, cleaned = false, {}, 0
+	local c, L = Fixture({
+		getTests = function(reverse, present)
+			Equal(reverse, true)
+			Equal(present, true)
+			return {
+				{
+					name = "one",
+					run = function()
+						assert(active)
+						order[#order + 1] = 1
+					end,
+				},
+				{
+					name = "skip",
+					offline = true,
+					run = function()
+						error("offline")
+					end,
+				},
+				{
+					name = "two",
+					run = function()
+						assert(active)
+						order[#order + 1] = 2
+					end,
+				},
+			}
+		end,
+		testOptions = function(reverse, present)
+			Equal(reverse, true)
+			Equal(present, true)
+			return {
+				schedule = schedule,
+				include = function(case)
+					return not case.offline
+				end,
+				setup = function()
+					active = true
+				end,
+				teardown = function()
+					active = false
+				end,
+			}
+		end,
+		beforeTests = function()
+			return "token"
+		end,
+		afterTests = function(token)
+			Equal(token, "token")
+			assert(not active)
+			cleaned = cleaned + 1
+		end,
+	})
+	FakeWindow(L)
+	local ok, passed, failed, result = c:RunTests(true, true)
+	Equal(ok, true)
+	Equal(passed, 0)
+	Equal(failed, 0)
+	Equal(result.status, "running")
+	Equal(result.total, 2)
+	Equal(result.skipped, 1)
+	Equal(#order, 0)
+	Equal(queued(), 1)
+	assert(c:GetText():find("Tests running: 0/2 complete.", 1, true))
+	Equal(c:RunTests(), false)
+	local stale = frame()[1]
+	Equal(active, false)
+	Equal(order[1], 2)
+	Equal(result.completed, 1)
+	stale()
+	Equal(result.completed, 1)
+	Equal(queued(), 1)
+	frame()
+	Equal(active, false)
+	Equal(order[2], 1)
+	Equal(cleaned, 1)
+	Equal(result.status, "complete")
+	Equal(result.passed, 2)
+	Equal(c.runningTests, false)
+	stale()
+	frame()
+	Equal(cleaned, 1)
+	Equal(queued(), 0)
+	local _, summaries = c:GetText():gsub("Test summary:", "")
+	Equal(summaries, 1)
+end)
+
+Test("headless tests ignore injected scheduling and remain synchronous", function()
+	local count = 0
+	local c = Fixture({
+		getTests = function()
+			return { {
+				name = "case",
+				run = function()
+					count = count + 1
+				end,
+			} }
+		end,
+		testOptions = function()
+			return {
+				schedule = function()
+					error("headless scheduling")
+				end,
+			}
+		end,
+	})
+	local ok, passed, failed, result = c:RunTests()
+	Equal(ok, true)
+	Equal(passed, 1)
+	Equal(failed, 0)
+	Equal(count, 1)
+	Equal(result.status, "complete")
+end)
+
+Test("async scheduler failure preserves partial results cleans up and unlocks", function()
+	for _, mode in ipairs({ "throw", "reject", "inline" }) do
+		local schedule, frame = Frames()
+		local requested, cleanup, cases = 0, 0, 0
+		local c, L = Fixture({
+			getTests = function()
+				return {
+					{
+						name = "first",
+						run = function()
+							cases = cases + 1
+						end,
+					},
+					{
+						name = "second",
+						run = function()
+							cases = cases + 1
+						end,
+					},
+				}
+			end,
+			testOptions = function()
+				return {
+					schedule = function(callback)
+						requested = requested + 1
+						if requested == 1 then
+							return schedule(callback)
+						end
+						if mode == "throw" then
+							error("scheduler failure")
+						end
+						if mode == "reject" then
+							return false
+						end
+						callback()
+					end,
+				}
+			end,
+			afterTests = function()
+				cleanup = cleanup + 1
+				error("cleanup failure")
+			end,
+		})
+		FakeWindow(L)
+		local _, _, _, result = c:RunTests(false, true)
+		frame()
+		Equal(result.passed, 1)
+		Equal(result.failed, 2)
+		Equal(result.completed, 1)
+		Equal(result.status, "aborted")
+		Equal(result.unrun, 1)
+		assert(c:GetText():find("unrun=1", 1, true))
+		Equal(cases, 1)
+		Equal(cleanup, 1)
+		Equal(c.runningTests, false)
+		Equal(result.failures[1].name, "Test scheduling unavailable")
+		Equal(result.failures[2].name, "Test isolation cleanup failed")
+	end
+end)
+
+Test("async setup and case failures finish whole teardown before returning to frames", function()
+	local schedule, frame = Frames()
+	local active, calls, cleanup = false, 0, 0
+	local c, L = Fixture({
+		getTests = function()
+			return {
+				{
+					name = "setup fails",
+					run = function()
+						error("unreachable")
+					end,
+				},
+				{
+					name = "body fails",
+					run = function()
+						error("body")
+					end,
+				},
+				{
+					name = "passes",
+					run = function()
+						assert(active)
+					end,
+				},
+			}
+		end,
+		testOptions = function()
+			return {
+				schedule = schedule,
+				setup = function()
+					calls = calls + 1
+					active = true
+					if calls == 1 then
+						error("setup")
+					end
+				end,
+				teardown = function()
+					active = false
+					cleanup = cleanup + 1
+				end,
+			}
+		end,
+	})
+	FakeWindow(L)
+	local _, _, _, result = c:RunTests(false, true)
+	for _ = 1, 3 do
+		frame()
+		Equal(active, false)
+	end
+	Equal(result.passed, 1)
+	Equal(result.failed, 2)
+	Equal(cleanup, 3)
+	Equal(c.runningTests, false)
+end)
+
+Test("async cancellation rejects stale callbacks without affecting subsequent runs", function()
+	local schedule, frame = Frames()
+	local count, cleanup = 0, 0
+	local c, L = Fixture({
+		getTests = function()
+			return { {
+				name = "case",
+				run = function()
+					count = count + 1
+				end,
+			} }
+		end,
+		testOptions = function()
+			return { schedule = schedule }
+		end,
+		afterTests = function()
+			cleanup = cleanup + 1
+		end,
+	})
+	FakeWindow(L)
+	local _, _, _, cancelled = c:RunTests(false, true)
+	Equal(c:CancelTests("disabled"), true)
+	Equal(c:CancelTests(), false)
+	Equal(cancelled.status, "cancelled")
+	Equal(cancelled.cancelled, 1)
+	local _, _, _, completed = c:RunTests(false, true)
+	frame()
+	Equal(count, 1)
+	Equal(cleanup, 2)
+	Equal(completed.passed, 1)
+	Equal(c.runningTests, false)
+end)
+
+Test("async progress refreshes are bounded and preserve a visible ALL view", function()
+	local schedule, frame = Frames()
+	local cases = {}
+	for index = 1, 201 do
+		cases[index] = { name = "case", run = function() end }
+	end
+	local c, L = Fixture({
+		getTests = function()
+			return cases
+		end,
+		testOptions = function()
+			return { schedule = schedule }
+		end,
+	})
+	local counts = FakeWindow(L)
+	c:Append("runtime", "STATE")
+	c:ShowLog()
+	c:SetSearch("old")
+	local _, before = counts()
+	local _, _, _, result = c:RunTests(false, true)
+	Equal(c:GetCategory(), "ALL")
+	Equal(c:GetSearch(), "")
+	for _ = 1, 201 do
+		frame()
+	end
+	local _, after = counts()
+	Equal(result.completed, 201)
+	assert(after - before <= 4)
+	Equal(c:GetCategory(), "ALL")
+	Equal(#c:GetEntries("STATE", ""), 1)
+end)
+
+Test("cancellation inside a case waits for per-case isolation cleanup", function()
+	local schedule, frame = Frames()
+	local active, cleaned, c = false, 0
+	local L
+	c, L = Fixture({
+		getTests = function()
+			return {
+				{
+					name = "cancel",
+					run = function()
+						assert(active)
+						Equal(c:CancelTests("disabled"), true)
+						Equal(cleaned, 0)
+					end,
+				},
+				{
+					name = "unrun",
+					run = function()
+						error("cancelled case")
+					end,
+				},
+			}
+		end,
+		testOptions = function()
+			return {
+				schedule = schedule,
+				setup = function()
+					active = true
+				end,
+				teardown = function()
+					active = false
+				end,
+			}
+		end,
+		afterTests = function()
+			assert(not active)
+			cleaned = cleaned + 1
+		end,
+	})
+	FakeWindow(L)
+	local _, _, _, result = c:RunTests(false, true)
+	frame()
+	Equal(result.status, "cancelled")
+	Equal(result.passed, 1)
+	Equal(result.cancelled, 1)
+	Equal(cleaned, 1)
+	Equal(c.runningTests, false)
 end)

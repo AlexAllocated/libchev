@@ -2,7 +2,7 @@
 -- Private embedding: every addon receives its own library through its loader
 -- namespace. No global registry, Blizzard mutation, hooks, events or saved data.
 local _, namespace = ...
-local LibChev = { VERSION = "1.2.4", API_VERSION = 1 }
+local LibChev = { VERSION = "1.3.0", API_VERSION = 1 }
 local unpackValues = unpack or table.unpack
 local secret = type(issecretvalue) == "function" and issecretvalue or nil
 local accessible = type(canaccessvalue) == "function" and canaccessvalue or nil
@@ -125,8 +125,14 @@ end
 -- may use this for Hide/ClearFocus. Unknown policy still fails closed.
 function LibChev.CanDismissOwnedRegion(region, policy)
 	local ok, restricted = pcall(policy.restricted)
-	if not ok or not LibChev.CanAccess(restricted) or type(restricted) ~= "boolean"
-		or not LibChev.CanMutateOwnedRegion(region) then return false end
+	if
+		not ok
+		or not LibChev.CanAccess(restricted)
+		or type(restricted) ~= "boolean"
+		or not LibChev.CanMutateOwnedRegion(region)
+	then
+		return false
+	end
 	local checked, allowed = pcall(policy.canMutate, region)
 	return checked and LibChev.CanAccess(allowed) and allowed == true
 end
@@ -429,27 +435,56 @@ end
 -- Cases are private {name, run} records. Fixtures/mocks are supplied by each
 -- addon; this runner never snapshots or patches globals or live addon state.
 -- Teardown runs even after setup/body failure. Registration is snapshotted.
-function LibChev.RunTests(cases, options)
-	options = options or {}
-	local pending, result = {}, { total = #cases, passed = 0, failed = 0, failures = {} }
-	for index, case in ipairs(cases) do
-		pending[index] = { name = case.name, run = case.run or case.fn }
+function LibChev.NewTestRun(cases, options)
+	local settings = {}
+	for key, value in pairs(options or {}) do
+		settings[key] = value
 	end
-	for index = 1, #pending do
-		local case = pending[options.reverse and (#pending - index + 1) or index]
+	local pending, result =
+		{}, { total = 0, passed = 0, failed = 0, skipped = 0, completed = 0, failures = {}, status = "running" }
+	local snapshot = {}
+	for index, registered in ipairs(cases) do
+		local case = {}
+		for key, value in pairs(registered) do
+			case[key] = value
+		end
+		case.run = case.run or case.fn
+		snapshot[index] = case
+	end
+	for _, case in ipairs(snapshot) do
+		if not settings.include or settings.include(case) then
+			pending[#pending + 1] = case
+		else
+			result.skipped = result.skipped + 1
+		end
+	end
+	result.total = #pending
+	local runner = { result = result }
+	local index, stepping = 0, false
+	function runner:Step()
+		if stepping or result.status ~= "running" then
+			return false, result
+		end
+		if index == #pending then
+			result.status = "complete"
+			return false, result
+		end
+		stepping = true
+		index = index + 1
+		local case = pending[settings.reverse and (#pending - index + 1) or index]
 		local fixture
 		local ok, err = LibChev.GuardCall(function()
-			if options.setup then
-				fixture = options.setup(case)
+			if settings.setup then
+				fixture = settings.setup(case)
 			end
-			if options.run then
-				options.run(case.run, fixture)
+			if settings.run then
+				settings.run(case.run, fixture)
 			else
 				case.run(fixture)
 			end
 		end)
-		if options.teardown then
-			local clean, cleanupError = LibChev.GuardCall(options.teardown, nil, fixture, case)
+		if settings.teardown then
+			local clean, cleanupError = LibChev.GuardCall(settings.teardown, nil, fixture, case)
 			if not clean then
 				err = ok and cleanupError or (err .. "\nTeardown: " .. cleanupError)
 				ok = false
@@ -461,11 +496,33 @@ function LibChev.RunTests(cases, options)
 			result.failed = result.failed + 1
 			local failure = { name = LibChev.Text(case.name), error = err }
 			result.failures[#result.failures + 1] = failure
-			if options.onFailure then
-				pcall(options.onFailure, failure)
+			if settings.onFailure then
+				pcall(settings.onFailure, failure)
 			end
 		end
+		result.completed = result.completed + 1
+		stepping = false
+		if index == #pending and result.status == "running" then
+			result.status = "complete"
+		end
+		return true, result
 	end
+	function runner:Cancel()
+		if result.status ~= "running" then
+			return false
+		end
+		result.status = "cancelled"
+		result.cancelled = result.total - index
+		return true
+	end
+	return runner
+end
+
+function LibChev.RunTests(cases, options)
+	local runner = LibChev.NewTestRun(cases, options)
+	while runner:Step() do
+	end
+	local result = runner.result
 	return result
 end
 

@@ -58,7 +58,7 @@ Test("private copies in either load order cannot replace each other", function()
 		Equal(second.LibChev, b)
 		assert(a ~= b)
 		a.VERSION, a.AppendLog = "older-fixture", nil
-		Equal(b.VERSION, "1.2.4")
+		Equal(b.VERSION, "1.3.0")
 		Equal(type(b.AppendLog), "function")
 	end
 end)
@@ -561,6 +561,94 @@ Test("runner snapshots registration and callback functions", function()
 	Equal(count, 1)
 end)
 
+Test("incremental runner selects cases snapshots options and isolates whole steps", function()
+	local trace, active = {}, false
+	local cases = {
+		{
+			name = "one",
+			live = true,
+			run = function()
+				assert(active)
+				trace[#trace + 1] = "one"
+			end,
+		},
+		{
+			name = "offline",
+			live = false,
+			run = function()
+				error("excluded")
+			end,
+		},
+		{
+			name = "two",
+			live = true,
+			run = function()
+				assert(active)
+				trace[#trace + 1] = "two"
+			end,
+		},
+	}
+	local options = {
+		reverse = true,
+		include = function(case)
+			return case.live
+		end,
+		setup = function()
+			active = true
+			return "fixture"
+		end,
+		teardown = function(fixture)
+			Equal(fixture, "fixture")
+			active = false
+		end,
+	}
+	local runner = T.NewTestRun(cases, options)
+	Equal(runner.result.total, 2)
+	Equal(runner.result.skipped, 1)
+	Equal(runner.result.status, "running")
+	options.teardown = function()
+		error("mutated option")
+	end
+	cases[3].run = function()
+		error("mutated callback")
+	end
+	Equal(runner:Step(), true)
+	Equal(runner.result.completed, 1)
+	Equal(active, false)
+	Equal(trace[1], "two")
+	Equal(runner:Step(), true)
+	Equal(runner.result.status, "complete")
+	Equal(runner:Step(), false)
+	Equal(runner.result.passed, 2)
+	Equal(trace[2], "one")
+end)
+
+Test("incremental cancellation retains completed outcomes and ignores further steps", function()
+	local count = 0
+	local runner = T.NewTestRun({
+		{
+			name = "first",
+			run = function()
+				count = count + 1
+			end,
+		},
+		{
+			name = "second",
+			run = function()
+				count = count + 1
+			end,
+		},
+	})
+	runner:Step()
+	Equal(runner:Cancel(), true)
+	Equal(runner:Cancel(), false)
+	Equal(runner:Step(), false)
+	Equal(count, 1)
+	Equal(runner.result.completed, 1)
+	Equal(runner.result.cancelled, 1)
+	Equal(runner.result.status, "cancelled")
+end)
+
 Test("explicit disabled immediate option never enables parked work", function()
 	local p, o = Policy()
 	o.active = false
@@ -604,7 +692,7 @@ Test("environment and diagnostic header sanitize client primitives", function()
 	Equal(env.build, "unknown")
 	Equal(env.locale, nil)
 	local text = T.DiagnosticReport("Fixture", "2", env):Text()
-	assert(text:find("library=libchev 1.2.4", 1, true))
+	assert(text:find("library=libchev 1.3.0", 1, true))
 	assert(text:find("client.locale=unknown", 1, true))
 end)
 Test("translation accepts only readable strings and falls back without foreign access", function()

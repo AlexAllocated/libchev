@@ -11,7 +11,7 @@ libchev provides bounded structured logs, capped counters, diagnostic reports an
 From a libchev checkout:
 
 ```sh
-python3 scripts/vendor.py /path/to/YourAddon --ref v1.2.4
+python3 scripts/vendor.py /path/to/YourAddon --ref v1.3.0
 python3 scripts/vendor.py /path/to/YourAddon --check
 ```
 
@@ -37,13 +37,15 @@ local log = LibChev.NewLog()
 LibChev.AppendLog(log, "Addon initialized", "CORE")
 ```
 
-The core exports `VERSION = "1.2.4"` and `API_VERSION = 1`. Optional modules extend only that same private object. Never load the library via a separate addon or publish the object in a global registry. Different embedded versions may coexist in either addon load order.
+The core exports `VERSION = "1.3.0"` and `API_VERSION = 1`. Optional modules extend only that same private object. Never load the library via a separate addon or publish the object in a global registry. Different embedded versions may coexist in either addon load order.
 
 ## One debug interface across addons
 
 `NewDebugController` owns the shared log/search/category model, test execution and results, diagnostic exports, command dispatch, and one console implementation. Every addon gets the same draggable, resizable UI with copy, clear, reload, run tests, diagnostics, category selection, fuzzy/quoted search, and scroll-to-latest behavior. Adapters supply owned stores/settings, isolated tests, domain diagnostics, and restriction policies. The library never chooses quest, nameplate, or poison behavior.
 
 Call `controller:HandleCommand(command, ...)` for debug commands and `controller:Append(text, category)` for events. Programmatic `RunTests(reverse)` remains headless; user commands and the Run Tests button explicitly present results. See the [shared debug contract](docs/DEBUG_CONTRACT.md) for every adapter field and method.
+
+To keep in-game tests responsive, return a `schedule(callback)` adapter from `policy.testOptions(reverse,present)`. Presented runs then execute one complete isolated case per later frame, show bounded progress, and retain a final summary. Keep individual live cases short and select expensive simulations only for offline runs with `include(case)`. `RunTests` without this opt-in remains synchronous. Suite hooks must not keep fixtures or temporary live-state changes installed between frames.
 
 Shared user-facing strings can use the consumer's optional `policy.translate(text)` callback. English remains the fallback, and internal category/diagnostic keys and raw logs stay unchanged. See the [localization contract and source catalog](docs/LOCALIZATION.md).
 

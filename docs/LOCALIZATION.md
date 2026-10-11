@@ -25,6 +25,7 @@ The `%s %s` report title receives the addon name then the translated report titl
 - `%s in-game tests`
 - `Addon-owned isolated checks; live-client behavior requires separate validation.`
 - `Test summary: %d passed, %d failed (%d total).`
+- `Tests running: %d/%d complete.`
 - `Select All`
 - `Clear`
 - `Reload UI`

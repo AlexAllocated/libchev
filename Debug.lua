@@ -398,47 +398,7 @@ local function AddFailure(result, name, detail)
 	result.total, result.failed = result.total + 1, result.failed + 1
 	result.failures[#result.failures + 1] = { name = name, error = detail }
 end
-function Controller:RunTests(reverse, present)
-	if self.runningTests then
-		return false,
-			0,
-			1,
-			{
-				total = 1,
-				passed = 0,
-				failed = 1,
-				failures = { { name = "Test run already active", error = "Reentrant test run rejected" } },
-			}
-	end
-	self.runningTests = true
-	local keepAll = false
-	if present == true then
-		local viewOK, showingAll = pcall(self.IsShowingAll, self)
-		keepAll = viewOK and showingAll == true
-	end
-	local token, result
-	local ok, detail = L.GuardCall(function()
-		if self.policy.beforeTests then
-			token = self.policy.beforeTests()
-		end
-		local cases = self.policy.getTests and self.policy.getTests() or {}
-		local options = self.policy.testOptions and self.policy.testOptions(reverse) or {}
-		options.reverse = reverse == true
-		result = L.RunTests(cases, options)
-	end)
-	if not result then
-		result = { total = 0, passed = 0, failed = 0, failures = {} }
-	end
-	if not ok then
-		AddFailure(result, "Test execution unavailable", detail)
-	end
-	if self.policy.afterTests then
-		local cleaned, failure = L.GuardCall(self.policy.afterTests, nil, token)
-		if not cleaned then
-			AddFailure(result, "Test isolation cleanup failed", failure)
-		end
-	end
-	self.runningTests = false
+function Controller:PresentTestResult(result, present, keepAll)
 	local report = self:Header()
 	report:Add(
 		"suite",
@@ -452,6 +412,16 @@ function Controller:RunTests(reverse, present)
 		"purpose",
 		L.Translate(self.policy, "Addon-owned isolated checks; live-client behavior requires separate validation.")
 	)
+	report:Add("status", result.status)
+	if result.skipped > 0 then
+		report:Add("skipped", result.skipped)
+	end
+	if result.cancelled then
+		report:Add("cancelled", result.cancelled)
+	end
+	if result.unrun and result.unrun > 0 then
+		report:Add("unrun", result.unrun)
+	end
 	for index, failure in ipairs(result.failures) do
 		report:Add("failure." .. index, "[FAIL] " .. Text(failure.name))
 		if self.policy.failureDetails == true then
@@ -484,7 +454,178 @@ function Controller:RunTests(reverse, present)
 		end
 		self:Print(L.TestSummary(result, self.policy))
 	end
-	return result.failed == 0, result.passed, result.failed, result
+end
+
+local function EmptyTestResult()
+	return { total = 0, passed = 0, failed = 0, skipped = 0, completed = 0, failures = {}, status = "running" }
+end
+
+function Controller:PresentTestProgress(run, initial)
+	local result = run.result
+	local line = L.TranslateFormat(self.policy, "Tests running: %d/%d complete.", result.completed, result.total)
+	local ok = L.GuardCall(function()
+		self:WithBatch(function()
+			if initial then
+				self:RemoveCategory("TEST")
+			end
+			self:Append(line, "TEST")
+			if initial then
+				self:SaveFilters(run.keepAll and "ALL" or "TEST", "")
+			end
+		end)
+		if initial then
+			self:ShowLog()
+		end
+	end)
+	if not ok then
+		self:Print(line)
+	end
+end
+
+function Controller:FinishTestRun(run, name, detail)
+	if run.finished or self.activeTestRun ~= run then
+		return false
+	end
+	run.finished = true
+	local result = run.result
+	if name then
+		result.unrun = result.total - result.completed
+		if result.status ~= "cancelled" then
+			result.status = "aborted"
+		end
+		AddFailure(result, name, detail)
+	end
+	if self.policy.afterTests then
+		local cleaned, failure = L.GuardCall(self.policy.afterTests, nil, run.token)
+		if not cleaned then
+			AddFailure(result, "Test isolation cleanup failed", failure)
+		end
+	end
+	if result.status == "running" then
+		result.status = "complete"
+	end
+	self.runningTests, self.activeTestRun = false, nil
+	local presented = L.GuardCall(self.PresentTestResult, nil, self, result, run.present, run.keepAll)
+	if not presented then
+		self:Print(L.TestSummary(result, self.policy))
+	end
+	return true
+end
+
+function Controller:CancelTests(reason)
+	local run = self.activeTestRun
+	if not run or run.finished then
+		return false
+	end
+	if run.runner then
+		run.runner:Cancel()
+	else
+		run.result.status = "cancelled"
+	end
+	run.result.cancelReason = Text(reason, "cancelled")
+	if run.stepping then
+		return true
+	end
+	return self:FinishTestRun(run)
+end
+
+function Controller:ScheduleTestStep(run)
+	if run.finished or self.activeTestRun ~= run then
+		return
+	end
+	-- A callback owns exactly one turn. Repeated or cancelled callbacks cannot
+	-- consume the next case or schedule additional work.
+	local pending, scheduling, inline = true, true, false
+	local ok, accepted = L.GuardCall(run.schedule, nil, function()
+		if scheduling then
+			inline = true
+			return
+		end
+		if not pending or run.finished or self.activeTestRun ~= run then
+			return
+		end
+		pending = false
+		run.stepping = true
+		local stepped, failure = L.GuardCall(function()
+			run.runner:Step()
+		end)
+		run.stepping = false
+		if not stepped then
+			self:FinishTestRun(run, "Test execution unavailable", failure)
+		elseif run.result.status ~= "running" then
+			self:FinishTestRun(run)
+		else
+			if run.result.completed % 100 == 0 then
+				self:PresentTestProgress(run, false)
+			end
+			self:ScheduleTestStep(run)
+		end
+	end)
+	scheduling = false
+	if not ok or accepted == false or inline then
+		pending = false
+		self:FinishTestRun(
+			run,
+			"Test scheduling unavailable",
+			inline and "Test scheduler must defer callbacks to a later frame"
+				or (ok and "Test scheduler rejected callback" or accepted)
+		)
+	end
+end
+
+function Controller:RunTests(reverse, present)
+	if self.runningTests then
+		return false,
+			0,
+			1,
+			{
+				total = 1,
+				passed = 0,
+				failed = 1,
+				failures = { { name = "Test run already active", error = "Reentrant test run rejected" } },
+			}
+	end
+	self.runningTests = true
+	local run = { present = present == true, keepAll = false, result = EmptyTestResult() }
+	self.activeTestRun = run
+	if run.present then
+		local viewOK, showingAll = pcall(self.IsShowingAll, self)
+		run.keepAll = viewOK and showingAll == true
+	end
+	local ok, detail = L.GuardCall(function()
+		if self.policy.beforeTests then
+			run.token = self.policy.beforeTests()
+		end
+		local cases = self.policy.getTests and self.policy.getTests(reverse, present) or {}
+		local options = self.policy.testOptions and self.policy.testOptions(reverse, present) or {}
+		local settings = {}
+		for key, value in pairs(options) do
+			settings[key] = value
+		end
+		settings.reverse = reverse == true
+		run.runner = L.NewTestRun(cases, settings)
+		run.result = run.runner.result
+		run.schedule = run.present and settings.schedule or nil
+	end)
+	if not ok then
+		self:FinishTestRun(run, "Test execution unavailable", detail)
+	elseif run.schedule then
+		self:PresentTestProgress(run, true)
+		self:ScheduleTestStep(run)
+		if not run.finished then
+			return true, 0, 0, run.result
+		end
+	else
+		run.stepping = true
+		local ran, failure = L.GuardCall(function()
+			while run.runner:Step() do
+			end
+		end)
+		run.stepping = false
+		self:FinishTestRun(run, not ran and "Test execution unavailable" or nil, failure)
+	end
+	local result = run.result
+	return result.status == "complete" and result.failed == 0, result.passed, result.failed, result
 end
 function Controller:HandleCommand(command, ...)
 	command = Text(command):lower():match("^%s*(.-)%s*$")

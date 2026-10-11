@@ -63,6 +63,10 @@ protected-frame denial. Live rendering and blocked-action behavior remain client
 - Shared API_VERSION remains 1. Exact revision manifests continue to select the five existing source files; no runtime locale files or global registries are introduced.
 - Live Retail/Forever font coverage, localized text width and rendering remain separate validation; offline fixture success does not prove layout in the client.
 
+## 1.3.0 staggered test execution
+
+Offline controller tests inject frame queues and exercise whole-case isolation, reverse/skip selection, partial failure retention, rejected/throwing/inline schedulers, cancellation, stale and duplicate callbacks, reentrant starts, and bounded progress refreshes. Both Lua 5.1 and 5.2 must pass normal and reverse execution, along with vendor Python tests. These checks do not prove a consumer's individual tests fit the native execution deadline or that its scheduler yields rendered frames; validate those in each live client.
+
 ## 1.2.4 safe window dismissal
 
 Debug and report/copy windows allow Close/Escape and focus cleanup during known runtime restrictions. Protected/forbidden regions, inaccessible values, unknown restriction states and consumer mutation denials still fail closed. Other buttons, opening, refresh/layout and gesture cancellation retain their existing guards. Offline tests cover safe dismissal and denied regions; live Retail/Forever interaction and taint remain separate validation.
